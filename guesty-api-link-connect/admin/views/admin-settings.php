@@ -38,6 +38,7 @@
         <button type="button" id="gvs-tab-searchbar" class="button gvs-nav-tab" onclick="gvsShowPanel('searchbar')">Search Bar</button>
         <button type="button" id="gvs-tab-filters" class="button gvs-nav-tab" onclick="gvsShowPanel('filters')">Filters</button>
         <button type="button" id="gvs-tab-styles" class="button gvs-nav-tab" onclick="gvsShowPanel('styles')">Main Style Settings</button>
+        <button type="button" id="gvs-tab-foryou" class="button gvs-nav-tab" onclick="gvsShowPanel('foryou')">For You Widget</button>
         <button type="button" id="gvs-tab-css" class="button gvs-nav-tab" onclick="gvsShowPanel('css')">Additional CSS</button>
         
         <?php if (defined('GUESTY_ALC_UNIT_PAGES_ACTIVE')): ?>
@@ -412,6 +413,45 @@
             </table>
 
             <div style="margin-top:20px; display: flex; justify-content: flex-end;"><?php submit_button('Save Style Settings', 'primary', 'submit', false); ?></div>
+        </div>
+
+        <!-- FOR YOU SETTINGS PANEL -->
+        <div id="gvs-panel-foryou" class="gvs-panel" style="display: none; background: #fff; padding: 25px; border: 1px solid #ccd0d4; border-radius: 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 style="margin:0;">"For You" Recommendation Widget Settings</h3>
+                <?php submit_button('Save For You Settings', 'primary', 'submit', false); ?>
+            </div>
+            
+            <p class="description" style="margin-bottom: 20px;">Use the settings below to fully customize how the <code>[guesty_for_you]</code> recommendation widget appears to your users.</p>
+
+            <h4 class="gvs-style-section-header">1. Section Title & Icon</h4>
+            <table class="form-table">
+                <tr valign="top"><th scope="row">Widget Title</th><td><input type="text" name="guesty_fy_title" value="<?php echo esc_attr(get_option('guesty_fy_title', 'Recommended For You')); ?>" style="width: 100%; max-width: 400px;" /></td></tr>
+                <tr valign="top"><th scope="row">Title Icon</th>
+                    <td>
+                        <?php $fy_icon = get_option('guesty_fy_icon', 'ph-star'); ?>
+                        <div style="display: flex; align-items: center; background: #fff; border: 1px solid #ccd0d4; padding: 8px; border-radius: 6px; max-width: 300px;">
+                            <span style="display: flex; justify-content: center; align-items: center; width: 32px; height: 32px; background: #f0f6fc; border-radius: 4px; margin-right: 12px;"><i class="ph <?php echo esc_attr($fy_icon); ?>" id="preview-fy-icon" style="font-size: 20px; color: <?php echo esc_attr(get_option('guesty_fy_icon_color', '#f59e0b')); ?>;"></i></span>
+                            <button type="button" class="button button-secondary" onclick="gvsOpenIconPicker('fy-icon', 'For You Title Icon')">Change Icon</button>
+                            <input type="hidden" name="guesty_fy_icon" id="input-fy-icon" value="<?php echo esc_attr($fy_icon); ?>">
+                        </div>
+                    </td>
+                </tr>
+                <tr valign="top"><th scope="row">Title Icon Color</th><td><input type="color" name="guesty_fy_icon_color" value="<?php echo esc_attr(get_option('guesty_fy_icon_color', '#f59e0b')); ?>" onchange="document.getElementById('preview-fy-icon').style.color = this.value;" /></td></tr>
+            </table>
+
+            <h4 class="gvs-style-section-header">2. Property Overlay Badge</h4>
+            <table class="form-table">
+                <tr valign="top"><th scope="row">Badge Text</th><td><input type="text" name="guesty_fy_badge_text" value="<?php echo esc_attr(get_option('guesty_fy_badge_text', 'Recommended')); ?>" style="width: 200px;" /></td></tr>
+                <tr valign="top"><th scope="row">Badge Colors</th>
+                    <td>
+                        Background: <input type="color" name="guesty_fy_badge_bg" value="<?php echo esc_attr(get_option('guesty_fy_badge_bg', '#f59e0b')); ?>" style="margin-right: 15px;" />
+                        Text: <input type="color" name="guesty_fy_badge_color" value="<?php echo esc_attr(get_option('guesty_fy_badge_color', '#ffffff')); ?>" />
+                    </td>
+                </tr>
+            </table>
+
+            <div style="margin-top:20px; display: flex; justify-content: flex-end;"><?php submit_button('Save For You Settings', 'primary', 'submit', false); ?></div>
         </div>
 
         <!-- CSS Panel -->
