@@ -13,7 +13,7 @@
     --gvs-cols-d: <?php echo esc_attr($row_d); ?>;
 ">
     <h2 class="gvs-title" style="display: flex; align-items: center; gap: 10px; margin-bottom: 24px;">
-        <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #f59e0b; fill: #f59e0b;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        <i class="ph <?php echo esc_attr($fy_icon); ?>" style="color: <?php echo esc_attr($fy_icon_color); ?>; font-size: 28px;"></i>
         <?php echo esc_html($title); ?>
     </h2>
     
@@ -51,6 +51,11 @@
         rowMobile: <?php echo $row_m; ?>,
         rowsLoadD: 1,
         rowsLoadT: 1,
-        rowsLoadM: 1
+        rowsLoadM: 1,
+        
+        // Pass dynamic badge settings to JavaScript
+        fyBadgeText: <?php echo json_encode($fy_badge_text); ?>,
+        fyBadgeBg: <?php echo json_encode($fy_badge_bg); ?>,
+        fyBadgeColor: <?php echo json_encode($fy_badge_color); ?>
     };
 </script>
