@@ -149,58 +149,134 @@ class Guesty_ALC_API {
     }
 
     private function fetch_availability_chunk($listing_ids, $start_date, $end_date, $token, $base) {
-        $url = $base . '/availability?listingIds=' . implode(',', $listing_ids) . '&startDate=' . urlencode($start_date) . '&endDate=' . urlencode($end_date);
+        $encoded_ids = urlencode(implode(',', $listing_ids));
+        $url = $base . '/availability-pricing/api/calendar/listings?listingIds=' . $encoded_ids . '&startDate=' . urlencode($start_date) . '&endDate=' . urlencode($end_date);
         
+        $this->log("Fetching availability chunk for " . count($listing_ids) . " listings. URL: {$url}", 'INFO');
+
         $response = wp_remote_get($url, [
             'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json' ],
             'timeout' => 15
         ]);
         
-        if (is_wp_error($response)) return ['success' => false, 'data' => []];
+        if (is_wp_error($response)) {
+            $this->log("cURL Error in fetch_availability_chunk: " . $response->get_error_message(), 'ERROR');
+            return ['success' => false, 'data' => []];
+        }
         
         $code = wp_remote_retrieve_response_code($response);
         $body_raw = wp_remote_retrieve_body($response);
         
+        $this->log("Availability chunk response code: {$code}", $code == 200 ? 'SUCCESS' : 'ERROR');
+
         if ($code == 200) {
+            // Log raw response string so we can explicitly see structural anomalies from Guesty
+            $this->log("Raw Guesty Response: " . substr(str_replace(["\r", "\n"], "", $body_raw), 0, 800), 'INFO');
+            
             $body = json_decode($body_raw, true);
             $results = [];
             $items = isset($body['data']) ? $body['data'] : (isset($body['results']) ? $body['results'] : $body);
             
             if (is_array($items)) {
-                foreach ($items as $item) {
+                $this->log("Successfully parsed " . count($items) . " top-level elements from response.", 'INFO');
+                
+                // FIX: If Guesty returns a single flat object like {"days": [...]} rather than a keyed array
+                if (isset($items['days']) && is_array($items['days'])) {
+                    $forced_id = $listing_ids[0];
+                    $this->log("Response is a flat calendar object. Forcing assignment to requested ID: {$forced_id}", 'WARNING');
+                    $items = [ $forced_id => $items ];
+                }
+                
+                foreach ($items as $key => $item) {
                     $lid = isset($item['listingId']) ? $item['listingId'] : (isset($item['_id']) ? $item['_id'] : null);
-                    if (!$lid) continue;
                     
-                    $is_available = true; $total_price = 0;
+                    // FIX: If Guesty returns a dictionary keyed by the listing ID
+                    if (!$lid && is_string($key) && strlen($key) >= 20) {
+                        $lid = $key;
+                    }
+                    
+                    if (!$lid) {
+                        $this->log("Could not identify Listing ID for response block. Skipping.", 'WARNING');
+                        continue;
+                    }
+                    
+                    $is_available = true; 
+                    $total_price = 0;
+                    $block_reasons = []; 
                     
                     if (isset($item['days']) && is_array($item['days'])) {
                         foreach ($item['days'] as $day) {
-                            if (isset($day['status']) && strtolower($day['status']) !== 'available') $is_available = false;
-                            if (isset($day['price'])) $total_price += (float)$day['price'];
+                            $day_date = isset($day['date']) ? $day['date'] : '';
+                            
+                            // Prevent evaluating the exact checkout date
+                            if (!empty($day_date) && strpos($day_date, $end_date) !== false) {
+                                continue; 
+                            }
+
+                            $day_is_available = false;
+                            
+                            if (isset($day['allotment']) && is_numeric($day['allotment'])) {
+                                $day_is_available = ((int)$day['allotment'] > 0);
+                                if (!$day_is_available) $block_reasons[] = "{$day_date} (allotment: {$day['allotment']})";
+                            } elseif (isset($day['status'])) {
+                                $day_is_available = (strtolower($day['status']) === 'available');
+                                if (!$day_is_available) $block_reasons[] = "{$day_date} (status: {$day['status']})";
+                            } else {
+                                $block_reasons[] = "{$day_date} (missing status/allotment fields)";
+                            }
+                            
+                            if (!$day_is_available) {
+                                $is_available = false;
+                            }
+
+                            if (isset($day['price'])) {
+                                $total_price += (float)$day['price'];
+                            }
                         }
                     } elseif (isset($item['status'])) {
                          $is_available = strtolower($item['status']) === 'available';
+                         if (!$is_available) $block_reasons[] = "Unit overall status: {$item['status']}";
                          $total_price = isset($item['price']) ? (float)$item['price'] : 0;
+                    } else {
+                        // If no calendar data exists in the object at all
+                        $is_available = false;
+                        $block_reasons[] = "No calendar data returned for unit by Guesty.";
                     }
+                    
+                    if (!$is_available) {
+                        $this->log("Unit {$lid} marked UNAVAILABLE. Reasons: " . implode(', ', $block_reasons), 'INFO');
+                    }
+
                     $results[$lid] = [ 'is_available' => $is_available, 'total_price' => $total_price ];
                 }
                 return ['success' => true, 'data' => $results];
+            } else {
+                $this->log("Availability chunk parsed body did not contain expected array of items. Body preview: " . substr($body_raw, 0, 500), 'WARNING');
             }
+        } else {
+            $this->log("Availability chunk failed. HTTP {$code}. Response preview: " . substr($body_raw, 0, 500), 'ERROR');
         }
         return ['success' => false, 'data' => [], 'raw' => $body_raw, 'code' => $code, 'url' => $url];
     }
 
     public function get_live_availability($listing_ids, $start_date, $end_date) {
+        $this->log("Initiating live availability search from {$start_date} to {$end_date} for " . count($listing_ids) . " listings.", 'INFO');
+        
         $token = $this->get_access_token();
-        if (!$token || empty($listing_ids)) return ['success' => false, 'data' => []];
+        if (!$token || empty($listing_ids)) {
+            $this->log("Live availability search aborted. Missing token or empty listing IDs.", 'ERROR');
+            return ['success' => false, 'data' => []];
+        }
         
         $base = str_replace('/v1/listings', '/v1', $this->api_url);
         $results = []; $overall_success = false;
         
         $valid_ids = array_filter($listing_ids, function($id) { return !empty($id) && is_string($id); });
-        if (empty($valid_ids)) return ['success' => false, 'data' => []];
+        if (empty($valid_ids)) {
+             $this->log("Live availability search aborted. No valid listing IDs after filtering.", 'WARNING');
+             return ['success' => false, 'data' => []];
+        }
 
-        // Production speed: Safely bump to 50 items since corrupt IDs are handled at sync level
         $chunks = array_chunk($valid_ids, 50); 
         
         foreach ($chunks as $chunk) {
@@ -208,20 +284,40 @@ class Guesty_ALC_API {
             if ($chunk_res['success']) {
                 $overall_success = true;
                 foreach ($chunk_res['data'] as $k => $v) { $results[$k] = $v; }
+                
+                // NEW: Identify listings that Guesty completely ignored in the batch request
+                $missing_ids = array_diff($chunk, array_keys($chunk_res['data']));
+                if (!empty($missing_ids)) {
+                    $this->log(count($missing_ids) . " units were dropped from batch. Fetching them individually to guarantee accuracy.", 'WARNING');
+                    foreach ($missing_ids as $single_id) {
+                        $single_res = $this->fetch_availability_chunk([$single_id], $start_date, $end_date, $token, $base);
+                        if ($single_res['success'] && !empty($single_res['data'])) {
+                            foreach ($single_res['data'] as $k => $v) { $results[$k] = $v; }
+                        } else {
+                            // If it still fails individually, explicitly mark as UNAVAILABLE so the frontend doesn't show it accidentally
+                            $results[$single_id] = [ 'is_available' => false, 'total_price' => 0 ];
+                            $this->log("Unit {$single_id} returned no data on fallback. Assuming unavailable.", 'WARNING');
+                        }
+                    }
+                }
             } else {
-                $this->log("Availability batch failed. Retrying individually to isolate the bad unit.", 'INFO');
+                $this->log("Availability batch failed completely. Retrying individually...", 'INFO');
                 foreach ($chunk as $single_id) {
                     $single_res = $this->fetch_availability_chunk([$single_id], $start_date, $end_date, $token, $base);
-                    if ($single_res['success']) {
+                    if ($single_res['success'] && !empty($single_res['data'])) {
                         $overall_success = true;
                         foreach ($single_res['data'] as $k => $v) { $results[$k] = $v; }
                     } else {
                         $err_code = isset($single_res['code']) ? $single_res['code'] : 'Unknown';
                         $this->log("Identified broken Guesty Listing ID: {$single_id}. HTTP {$err_code}.", 'WARNING');
+                        // Explicitly mark as UNAVAILABLE so frontend hides it
+                        $results[$single_id] = [ 'is_available' => false, 'total_price' => 0 ];
                     }
                 }
             }
         }
+        
+        $this->log("Live availability search complete. Found " . count($results) . " tracked availability records. Overall success: " . ($overall_success ? 'Yes' : 'No'), 'INFO');
         return ['success' => $overall_success, 'data' => $results];
     }
 
@@ -368,7 +464,6 @@ class Guesty_ALC_API {
             if (isset($listing['reviewScore']) && empty($rating_score)) $rating_score = $listing['reviewScore'];
             if (isset($listing['reviewsCount']) && empty($reviews_count)) $reviews_count = $listing['reviewsCount'];
 
-            // Added caching for images, descriptions, and slugs to support the Unit Pages Add-on
             $pictures = [];
             if (isset($listing['pictures']) && is_array($listing['pictures'])) {
                 foreach ($listing['pictures'] as $pic) {
@@ -377,7 +472,6 @@ class Guesty_ALC_API {
             }
             $description = isset($listing['publicDescription']['summary']) ? $listing['publicDescription']['summary'] : '';
 
-            // Extremely lean array mapping to save DB Memory and prevent slow HTML generation
             $formatted[] = [
                 'id' => $listing['_id'] ?? '',
                 'slug' => sanitize_title($listing['title'] ?? 'Beautiful Stay'),
