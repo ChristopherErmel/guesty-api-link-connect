@@ -105,7 +105,8 @@ document.addEventListener('DOMContentLoaded', function() {
             localListings, useAjax, useUnitPages, homeUrl, unitPageSlug, searchOnly, redirectUrl, customLoadMoreText, isGlobalReviewsOn, customBtnText,
             propertyBaseUrl, fallbackImg, customBadgesData, customCountLabel, showPetBadge,
             petBadgeIcon, scStartTab, scHideTabs, customPriceLabel, customCurrencyMode,
-            rowDesktop, rowTablet, rowMobile, rowsLoadD, rowsLoadT, rowsLoadM, isForYouWidget
+            rowDesktop, rowTablet, rowMobile, rowsLoadD, rowsLoadT, rowsLoadM, isForYouWidget,
+            fyBadgeText, fyBadgeBg, fyBadgeColor
         } = config;
 
         const ajaxUrl = typeof guestyAlcvars !== 'undefined' ? guestyAlcvars.ajaxUrl : '';
@@ -477,7 +478,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 let customBadgeHTML = '';
                 // If it's a recommendation, override with a unique badge
                 if (isForYouWidget) {
-                    customBadgeHTML = `<div class="gvs-badge-straight" style="background-color: #f59e0b; color: #ffffff;">Recommended</div>`;
+                    const bText = fyBadgeText || 'Recommended';
+                    const bBg = fyBadgeBg || '#f59e0b';
+                    const bColor = fyBadgeColor || '#ffffff';
+                    customBadgeHTML = `<div class="gvs-badge-straight" style="background-color: ${bBg}; color: ${bColor};">${bText}</div>`;
                 } else if (customBadgesData[item.id] && customBadgesData[item.id].text) {
                     const bData = customBadgesData[item.id];
                     const badgeClass = bData.style === 'straight' ? 'gvs-badge-straight' : 'gvs-badge-diagonal';
