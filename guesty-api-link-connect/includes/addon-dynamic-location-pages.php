@@ -78,7 +78,7 @@ function guesty_dynamic_location_page_handler() {
              * Once rendered, our 'addon-location-locker.php' script will automatically detect it,
              * lock it to this location, and hit search!
              */
-            echo do_shortcode('[guesty_perfect_stay]'); 
+            echo do_shortcode('[guesty_perfect_stay search_bar="true" hide_tabs="false"]'); 
             ?>
             
         </div>
