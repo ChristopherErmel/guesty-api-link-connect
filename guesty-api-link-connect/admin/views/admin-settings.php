@@ -39,6 +39,7 @@
         <button type="button" id="gvs-tab-filters" class="button gvs-nav-tab" onclick="gvsShowPanel('filters')">Filters</button>
         <button type="button" id="gvs-tab-styles" class="button gvs-nav-tab" onclick="gvsShowPanel('styles')">Main Style Settings</button>
         <button type="button" id="gvs-tab-foryou" class="button gvs-nav-tab" onclick="gvsShowPanel('foryou')">For You Widget</button>
+        <button type="button" id="gvs-tab-autoloc" class="button gvs-nav-tab" onclick="gvsShowPanel('autoloc')">Auto Locations</button>
         <button type="button" id="gvs-tab-css" class="button gvs-nav-tab" onclick="gvsShowPanel('css')">Additional CSS</button>
         
         <?php if (defined('GUESTY_ALC_UNIT_PAGES_ACTIVE')): ?>
@@ -452,6 +453,46 @@
             </table>
 
             <div style="margin-top:20px; display: flex; justify-content: flex-end;"><?php submit_button('Save For You Settings', 'primary', 'submit', false); ?></div>
+        </div>
+
+        <!-- AUTO LOCATIONS PANEL -->
+        <div id="gvs-panel-autoloc" class="gvs-panel" style="display: none; background: #fff; padding: 25px; border: 1px solid #ccd0d4; border-radius: 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 style="margin:0;">Auto-Generated Location Pages</h3>
+                <?php submit_button('Save Auto Locations Settings', 'primary', 'submit', false); ?>
+            </div>
+            
+            <p class="description" style="margin-bottom: 20px;">Customize the look and feel of the dynamically generated location pages (e.g., yoursite.com/muskoka/).</p>
+            
+            <table class="form-table">
+                <tr valign="top">
+                    <th scope="row"><label for="guesty_alc_auto_loc_shortcode">Search Bar Shortcode</label></th>
+                    <td>
+                        <input name="guesty_alc_auto_loc_shortcode" type="text" id="guesty_alc_auto_loc_shortcode" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_shortcode', '[YOUR_SEARCH_SHORTCODE]')); ?>" class="regular-text" style="width: 100%; max-width: 400px;">
+                        <p class="description">Enter the shortcode used to generate your search bar (e.g. [gvs_search]).</p>
+                    </td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="guesty_alc_auto_loc_bg_color">Page Background Color</label></th>
+                    <td>
+                        <input name="guesty_alc_auto_loc_bg_color" type="color" id="guesty_alc_auto_loc_bg_color" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_bg_color', '#f7f9fc')); ?>">
+                    </td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="guesty_alc_auto_loc_search_color">Search Bar Color</label></th>
+                    <td>
+                        <input name="guesty_alc_auto_loc_search_color" type="color" id="guesty_alc_auto_loc_search_color" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_search_color', '#ffffff')); ?>">
+                    </td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="guesty_alc_auto_loc_header_color">Header Text Color</label></th>
+                    <td>
+                        <input name="guesty_alc_auto_loc_header_color" type="color" id="guesty_alc_auto_loc_header_color" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_header_color', '#001f3f')); ?>">
+                    </td>
+                </tr>
+            </table>
+
+            <div style="margin-top:20px; display: flex; justify-content: flex-end;"><?php submit_button('Save Auto Locations Settings', 'primary', 'submit', false); ?></div>
         </div>
 
         <!-- CSS Panel -->
