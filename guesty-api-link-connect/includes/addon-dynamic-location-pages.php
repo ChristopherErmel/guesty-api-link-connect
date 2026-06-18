@@ -8,6 +8,27 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+// 1. Intercept Admin Saves for our new Custom Settings
+add_action('admin_init', 'guesty_alc_auto_loc_save_settings');
+function guesty_alc_auto_loc_save_settings() {
+    if ( ! current_user_can('manage_options') ) return;
+    
+    // Check if our custom fields are in the POST request (when the user hits save)
+    if ( isset($_POST['guesty_alc_auto_loc_shortcode']) ) {
+        update_option('guesty_alc_auto_loc_shortcode', sanitize_text_field($_POST['guesty_alc_auto_loc_shortcode']));
+    }
+    if ( isset($_POST['guesty_alc_auto_loc_bg_color']) ) {
+        update_option('guesty_alc_auto_loc_bg_color', sanitize_hex_color($_POST['guesty_alc_auto_loc_bg_color']));
+    }
+    if ( isset($_POST['guesty_alc_auto_loc_search_color']) ) {
+        update_option('guesty_alc_auto_loc_search_color', sanitize_hex_color($_POST['guesty_alc_auto_loc_search_color']));
+    }
+    if ( isset($_POST['guesty_alc_auto_loc_header_color']) ) {
+        update_option('guesty_alc_auto_loc_header_color', sanitize_hex_color($_POST['guesty_alc_auto_loc_header_color']));
+    }
+}
+
+// 2. The Dynamic Page Handler
 add_action('template_redirect', 'guesty_dynamic_location_page_handler');
 
 function guesty_dynamic_location_page_handler() {
@@ -19,7 +40,7 @@ function guesty_dynamic_location_page_handler() {
     }
 
     $path = trim($_SERVER['REQUEST_URI'], '/');
-    $path = explode('?', $path)[0]; // Strip any URL parameters (e.g. ?guests=2)
+    $path = explode('?', $path)[0]; // Strip any URL parameters
     $segments = explode('/', $path);
     $slug = end($segments); // Get the very last part of the URL
 
@@ -40,7 +61,7 @@ function guesty_dynamic_location_page_handler() {
         $clean_name = str_ireplace( array(', Canada', ', USA'), '', $loc );
         $clean_name = trim( $clean_name );
         
-        // If the URL matches our location slug (e.g., 'burks-falls' === 'burks-falls')
+        // If the URL matches our location slug
         if ( sanitize_title( $clean_name ) === $slug ) {
             $matched_location = $clean_name;
             break;
@@ -48,46 +69,68 @@ function guesty_dynamic_location_page_handler() {
     }
 
     if ( $matched_location ) {
-        // 1. Force a 200 OK success status instead of a 404 error
+        // Fetch User Configured Settings from the Admin Panel (with defaults)
+        $shortcode    = get_option('guesty_alc_auto_loc_shortcode', '[YOUR_SEARCH_SHORTCODE]');
+        $bg_color     = get_option('guesty_alc_auto_loc_bg_color', '#f7f9fc');
+        $search_color = get_option('guesty_alc_auto_loc_search_color', '#ffffff');
+        $header_color = get_option('guesty_alc_auto_loc_header_color', '#001f3f');
+
+        // Force a 200 OK success status instead of a 404 error
         status_header( 200 );
         $wp_query->is_404 = false;
         $wp_query->is_page = true;
         
-        // 2. Change the browser tab title dynamically
         add_filter( 'document_title_parts', function( $title ) use ( $matched_location ) {
             $title['title'] = $matched_location . ' Vacations & Stays';
             return $title;
         });
 
-        // 3. Output the site's normal Header
         get_header();
         
-        // 4. Output the page content container
         ?>
-        <div class="guesty-dynamic-location-wrapper" style="max-width: 1400px; margin: 60px auto; padding: 0 20px;">
+        <!-- Dynamic Styles based on Admin Settings -->
+        <style>
+            /* Apply custom background color */
+            body {
+                background-color: <?php echo esc_attr($bg_color); ?> !important;
+            }
+            .guesty-dynamic-location-wrapper {
+                max-width: 1400px;
+                margin: 60px auto;
+                padding: 0 20px;
+                min-height: 60vh;
+            }
+            /* Apply custom header text color */
+            .guesty-dynamic-location-header {
+                text-align: center;
+                margin-bottom: 40px;
+                font-family: Georgia, serif;
+                font-size: 3.5rem;
+                color: <?php echo esc_attr($header_color); ?> !important;
+            }
+            /* Targeting the Search Bar Container for custom colors */
+            .guesty-dynamic-location-wrapper .gvs-search-bar,
+            .guesty-dynamic-location-wrapper .gvs-search-bar-container {
+                background-color: <?php echo esc_attr($search_color); ?> !important;
+                border-color: <?php echo esc_attr($search_color); ?> !important; 
+            }
+        </style>
+
+        <div class="guesty-dynamic-location-wrapper">
             
-            <h1 style="text-align: center; margin-bottom: 40px; font-family: Georgia, serif; font-size: 3rem;">
+            <h1 class="guesty-dynamic-location-header">
                 Explore <?php echo esc_html( $matched_location ); ?>
             </h1>
             
             <?php 
-            /* 
-             * IMPORTANT: Replace '[YOUR_SEARCH_SHORTCODE]' with the actual shortcode 
-             * that outputs your main search bar and unit grid. 
-             * 
-             * Once rendered, our 'addon-location-locker.php' script will automatically detect it,
-             * lock it to this location, and hit search!
-             */
-            echo do_shortcode('[guesty_perfect_stay search_bar="true" hide_tabs="false"]'); 
+            // Render the user's configured shortcode dynamically
+            echo do_shortcode($shortcode); 
             ?>
             
         </div>
         <?php
         
-        // 5. Output the site's normal Footer
         get_footer();
-        
-        // 6. Exit immediately so WordPress doesn't try to load the actual 404 template
         exit; 
     }
 }
