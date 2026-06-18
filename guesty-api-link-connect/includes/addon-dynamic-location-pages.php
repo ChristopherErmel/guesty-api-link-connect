@@ -14,6 +14,7 @@ function guesty_alc_auto_loc_register_settings() {
     // By registering these to your existing 'guesty-settings-group', WordPress natively handles saving & stripping slashes!
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_shortcode', 'sanitize_text_field');
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_header_text', 'sanitize_text_field');
+    register_setting('guesty-settings-group', 'guesty_alc_auto_loc_browser_title', 'sanitize_text_field');
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_bg_color', 'sanitize_hex_color');
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_search_color', 'sanitize_hex_color');
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_header_color', 'sanitize_hex_color');
@@ -74,14 +75,17 @@ function guesty_dynamic_location_page_handler() {
         // Dynamically build the header text replacing the placeholder
         $custom_header = str_ireplace('{location}', $matched_location, $header_fmt);
 
+        // Fetch and format the Browser Tab Title
+        $browser_title_fmt = get_option('guesty_alc_auto_loc_browser_title', '{location} Vacations & Stays - {site_name}');
+        $site_name         = get_bloginfo('name');
+        $browser_title     = str_ireplace( array('{location}', '{site_name}'), array($matched_location, $site_name), $browser_title_fmt );
+
         // Force a 200 OK success status instead of a 404 error
         status_header( 200 );
         $wp_query->is_404 = false;
         $wp_query->is_page = true;
         
         // Aggressively override the Browser Tab Title (handles Native WP, Yoast, and RankMath)
-        $browser_title = $matched_location . ' Vacations & Stays - ' . get_bloginfo('name');
-        
         add_filter( 'pre_get_document_title', function() use ( $browser_title ) { return $browser_title; }, 999 );
         add_filter( 'wpseo_title', function() use ( $browser_title ) { return $browser_title; }, 999 ); // Yoast Override
         add_filter( 'rank_math/frontend/title', function() use ( $browser_title ) { return $browser_title; }, 999 ); // RankMath Override
