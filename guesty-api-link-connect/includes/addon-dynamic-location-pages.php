@@ -8,24 +8,15 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// 1. Intercept Admin Saves for our new Custom Settings
-add_action('admin_init', 'guesty_alc_auto_loc_save_settings');
-function guesty_alc_auto_loc_save_settings() {
-    if ( ! current_user_can('manage_options') ) return;
-    
-    // Check if our custom fields are in the POST request (when the user hits save)
-    if ( isset($_POST['guesty_alc_auto_loc_shortcode']) ) {
-        update_option('guesty_alc_auto_loc_shortcode', sanitize_text_field($_POST['guesty_alc_auto_loc_shortcode']));
-    }
-    if ( isset($_POST['guesty_alc_auto_loc_bg_color']) ) {
-        update_option('guesty_alc_auto_loc_bg_color', sanitize_hex_color($_POST['guesty_alc_auto_loc_bg_color']));
-    }
-    if ( isset($_POST['guesty_alc_auto_loc_search_color']) ) {
-        update_option('guesty_alc_auto_loc_search_color', sanitize_hex_color($_POST['guesty_alc_auto_loc_search_color']));
-    }
-    if ( isset($_POST['guesty_alc_auto_loc_header_color']) ) {
-        update_option('guesty_alc_auto_loc_header_color', sanitize_hex_color($_POST['guesty_alc_auto_loc_header_color']));
-    }
+// 1. Register our new Custom Settings to the native WordPress engine
+add_action('admin_init', 'guesty_alc_auto_loc_register_settings');
+function guesty_alc_auto_loc_register_settings() {
+    // By registering these to your existing 'guesty-settings-group', WordPress natively handles saving & stripping slashes!
+    register_setting('guesty-settings-group', 'guesty_alc_auto_loc_shortcode', 'sanitize_text_field');
+    register_setting('guesty-settings-group', 'guesty_alc_auto_loc_header_text', 'sanitize_text_field');
+    register_setting('guesty-settings-group', 'guesty_alc_auto_loc_bg_color', 'sanitize_hex_color');
+    register_setting('guesty-settings-group', 'guesty_alc_auto_loc_search_color', 'sanitize_hex_color');
+    register_setting('guesty-settings-group', 'guesty_alc_auto_loc_header_color', 'sanitize_hex_color');
 }
 
 // 2. The Dynamic Page Handler
@@ -71,19 +62,29 @@ function guesty_dynamic_location_page_handler() {
     if ( $matched_location ) {
         // Fetch User Configured Settings from the Admin Panel (with defaults)
         $shortcode    = get_option('guesty_alc_auto_loc_shortcode', '[YOUR_SEARCH_SHORTCODE]');
+        $header_fmt   = get_option('guesty_alc_auto_loc_header_text', 'Explore {location}');
+        
+        // Failsafe: Strip any existing slashes that were saved before this patch
+        $shortcode    = stripslashes($shortcode); 
+        
         $bg_color     = get_option('guesty_alc_auto_loc_bg_color', '#f7f9fc');
         $search_color = get_option('guesty_alc_auto_loc_search_color', '#ffffff');
         $header_color = get_option('guesty_alc_auto_loc_header_color', '#001f3f');
+
+        // Dynamically build the header text replacing the placeholder
+        $custom_header = str_ireplace('{location}', $matched_location, $header_fmt);
 
         // Force a 200 OK success status instead of a 404 error
         status_header( 200 );
         $wp_query->is_404 = false;
         $wp_query->is_page = true;
         
-        add_filter( 'document_title_parts', function( $title ) use ( $matched_location ) {
-            $title['title'] = $matched_location . ' Vacations & Stays';
-            return $title;
-        });
+        // Aggressively override the Browser Tab Title (handles Native WP, Yoast, and RankMath)
+        $browser_title = $matched_location . ' Vacations & Stays - ' . get_bloginfo('name');
+        
+        add_filter( 'pre_get_document_title', function() use ( $browser_title ) { return $browser_title; }, 999 );
+        add_filter( 'wpseo_title', function() use ( $browser_title ) { return $browser_title; }, 999 ); // Yoast Override
+        add_filter( 'rank_math/frontend/title', function() use ( $browser_title ) { return $browser_title; }, 999 ); // RankMath Override
 
         get_header();
         
@@ -119,7 +120,7 @@ function guesty_dynamic_location_page_handler() {
         <div class="guesty-dynamic-location-wrapper">
             
             <h1 class="guesty-dynamic-location-header">
-                Explore <?php echo esc_html( $matched_location ); ?>
+                <?php echo esc_html( $custom_header ); ?>
             </h1>
             
             <?php 
