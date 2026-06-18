@@ -71,6 +71,22 @@ function guesty_location_locker_script() {
                         searchBtn.click();
                     }
                 }, 500);
+
+                // 4. FIX: Overpower the "Clear" button so it doesn't unlock the location
+                const clearBtns = document.querySelectorAll('.gvs-clear-button');
+                clearBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        // Wait a fraction of a second (50ms) for the native Clear script to empty the dates/guests
+                        setTimeout(() => {
+                            // Instantly force the location back into the dropdown
+                            searchSelect.value = locMap[currentSlug];
+                            
+                            // Click the search button again to fetch the locked location results
+                            const searchBtn = document.querySelector('.gvs-do-search');
+                            if (searchBtn) searchBtn.click();
+                        }, 50); 
+                    });
+                });
             }
         }
     });
