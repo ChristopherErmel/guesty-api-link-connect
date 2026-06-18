@@ -466,6 +466,13 @@
             
             <table class="form-table">
                 <tr valign="top">
+                    <th scope="row"><label for="guesty_alc_auto_loc_header_text">Custom Header Format</label></th>
+                    <td>
+                        <input name="guesty_alc_auto_loc_header_text" type="text" id="guesty_alc_auto_loc_header_text" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_header_text', 'Explore {location}')); ?>" class="regular-text" style="width: 100%; max-width: 400px;">
+                        <p class="description">Use <code>{location}</code> as a placeholder. (e.g., "Best Stays in {location}")</p>
+                    </td>
+                </tr>
+                <tr valign="top">
                     <th scope="row"><label for="guesty_alc_auto_loc_shortcode">Search Bar Shortcode</label></th>
                     <td>
                         <input name="guesty_alc_auto_loc_shortcode" type="text" id="guesty_alc_auto_loc_shortcode" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_shortcode', '[YOUR_SEARCH_SHORTCODE]')); ?>" class="regular-text" style="width: 100%; max-width: 400px;">
