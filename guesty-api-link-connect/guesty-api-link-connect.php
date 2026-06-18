@@ -20,6 +20,7 @@ require_once GUESTY_ALC_PATH . 'admin/class-guesty-admin.php';
 require_once GUESTY_ALC_PATH . 'frontend/class-guesty-frontend.php';
 require_once GUESTY_ALC_PATH . 'includes/addon-guesty-foryou.php';
 require_once GUESTY_ALC_PATH . 'includes/shortcode-locations-grid.php';
+require_once GUESTY_ALC_PATH . 'includes/addon-location-locker.php';
 
 /**
  * Initialize the plugin
