@@ -121,14 +121,14 @@ function guesty_dynamic_location_page_handler() {
             }
             .guesty-dynamic-location-wrapper {
                 max-width: 1400px;
-                margin: 60px auto;
+                margin: 10px auto;
                 padding: 0 20px;
                 min-height: 60vh;
             }
             /* Apply custom header text color */
             .guesty-dynamic-location-header {
                 text-align: center;
-                margin-bottom: 40px;
+                margin-bottom: 10px;
                 color: <?php echo esc_attr($header_color); ?> !important;
                 font-size: 2.5rem;
                 font-weight: 600;
