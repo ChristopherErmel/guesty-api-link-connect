@@ -63,18 +63,18 @@
         
         <!-- Right Aligned Distinct Buttons -->
         <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
-            <button type="button" id="gvs-tab-shortcode" class="button gvs-nav-tab" style="display: flex; align-items: center; gap: 4px;" onclick="gvsShowPanel('shortcode')">
-                <span class="dashicons dashicons-editor-code" style="margin-top: 3px;"></span> Shortcode Guide
+            <button type="button" id="gvs-tab-shortcode" class="button gvs-nav-tab" style="display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;" onclick="gvsShowPanel('shortcode')">
+                <span class="dashicons dashicons-editor-code" style="display: flex; align-items: center; height: 100%;"></span> Shortcode Guide
             </button>
 
-            <button type="button" id="gvs-tab-docs" class="button gvs-nav-tab" style="display: flex; align-items: center; gap: 4px;" onclick="gvsShowPanel('docs')">
-                <span class="dashicons dashicons-book-alt" style="margin-top: 3px;"></span> Documentation
+            <button type="button" id="gvs-tab-docs" class="button gvs-nav-tab" style="display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;" onclick="gvsShowPanel('docs')">
+                <span class="dashicons dashicons-book-alt" style="display: flex; align-items: center; height: 100%;"></span> Documentation
             </button>
 
             <form method="post" action="" style="margin:0;">
                 <?php wp_nonce_field('guesty_admin_action', 'guesty_admin_nonce'); ?>
-                <button type="submit" name="force_guesty_refresh" class="button" style="background-color: #16a34a; border-color: #158c3f; color: #fff; display: flex; align-items: center; gap: 4px;" title="Forces a fresh pull from Guesty">
-                    <span class="dashicons dashicons-update" style="margin-top: 3px;"></span> Sync Guesty Data
+                <button type="submit" name="force_guesty_refresh" class="button" style="background-color: #16a34a; border-color: #158c3f; color: #fff; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;" title="Forces a fresh pull from Guesty">
+                    <span class="dashicons dashicons-update" style="display: flex; align-items: center; height: 100%;"></span> Sync Guesty Data
                 </button>
             </form>
         </div>
@@ -504,6 +504,55 @@
                         <input name="guesty_alc_auto_loc_header_color" type="color" id="guesty_alc_auto_loc_header_color" value="<?php echo esc_attr(get_option('guesty_alc_auto_loc_header_color', '#001f3f')); ?>">
                     </td>
                 </tr>
+                
+                <tr valign="top">
+                    <td colspan="2" style="padding: 0;">
+                        <h4 class="gvs-style-section-header" style="margin-bottom: 10px;">Dynamic Grid Media Options</h4>
+                        <p class="description" style="margin-bottom: 20px;">Manage the background imagery used on the <code>[guesty_locations_grid]</code> bento-box output.</p>
+                    </td>
+                </tr>
+                
+                <tr valign="top">
+                    <th scope="row">Main Grid Background Image</th>
+                    <td>
+                        <?php $grid_base_img = get_option('guesty_alc_grid_base_image'); ?>
+                        <div style="display: flex; gap: 15px; align-items: flex-end;">
+                            <div id="guesty_grid_base_preview" style="width: 200px; height: 120px; background: #f0f0f1; border: 1px dashed #b4b9be; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 6px;">
+                                <?php if ($grid_base_img): ?><img src="<?php echo esc_url($grid_base_img); ?>" style="width: 100%; height: 100%; object-fit: cover;"><?php else: ?><span style="color: #646970; font-size: 13px;">Default Muskoka</span><?php endif; ?>
+                            </div>
+                            <div>
+                                <input type="hidden" name="guesty_alc_grid_base_image" id="guesty_alc_grid_base_image" value="<?php echo esc_attr($grid_base_img); ?>" />
+                                <button type="button" class="button" id="guesty_grid_base_btn">Select Image</button>
+                                <button type="button" class="button button-link-delete" id="guesty_clear_grid_base_btn" style="<?php echo empty($grid_base_img) ? 'display:none;' : ''; ?>">Clear</button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr valign="top">
+                    <th scope="row">
+                        Hover Crossfade Images
+                        <p class="description" style="font-weight: normal; margin-top: 5px;">You can select multiple images at once from the Media Library by holding Shift or Ctrl.</p>
+                    </th>
+                    <td>
+                        <div id="guesty_hover_images_container" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 15px;">
+                            <?php 
+                            $hover_imgs = get_option('guesty_alc_grid_hover_images', []);
+                            if(is_array($hover_imgs) && !empty($hover_imgs)) {
+                                foreach($hover_imgs as $img) {
+                                    if(empty($img)) continue;
+                                    echo '<div class="guesty-hover-img-item" style="position:relative; width: 100px; height: 100px; border:1px solid #ccd0d4; border-radius:6px; overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
+                                    echo '<img src="'.esc_url($img).'" style="width:100%; height:100%; object-fit:cover;">';
+                                    echo '<input type="hidden" name="guesty_alc_grid_hover_images[]" value="'.esc_attr($img).'">';
+                                    echo '<button type="button" class="guesty-remove-hover-img" style="position:absolute; top:4px; right:4px; background:#d63638; color:#fff; border:none; border-radius:50%; cursor:pointer; width:22px; height:22px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; line-height:1; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">&times;</button>';
+                                    echo '</div>';
+                                }
+                            }
+                            ?>
+                        </div>
+                        <button type="button" class="button button-secondary" id="guesty_add_hover_img_btn" style="display: inline-flex; align-items: center; gap: 5px;"><span class="dashicons dashicons-plus-alt2" style="font-size: 16px; width: 16px; height: 16px;"></span> Add Random Images</button>
+                    </td>
+                </tr>
             </table>
 
             <div style="margin-top:20px; display: flex; justify-content: flex-end;"><?php submit_button('Save Auto Locations Settings', 'primary', 'submit', false); ?></div>
@@ -534,9 +583,20 @@
         <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-top: 20px;">
             <table class="form-table" style="margin-top: 0;">
                 <tbody>
-                    <tr><th scope="row" style="padding-top: 0; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb;">Shortcode Type</th><td style="padding-top: 0; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb;"><label style="margin-right: 15px; font-weight: 600;"><input type="radio" name="gvs-sc-type" value="standard" checked onchange="gvsUpdateShortcode()"> Standard Property Grid</label><label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="foryou" onchange="gvsUpdateShortcode()"> "For You" Recommendation Widget</label></td></tr>
+                    <tr>
+                        <th scope="row" style="padding-top: 0; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb;">Shortcode Type</th>
+                        <td style="padding-top: 0; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb;">
+                            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                                <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="standard" checked onchange="gvsUpdateShortcode()"> Standard Property Grid</label>
+                                <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="locations" onchange="gvsUpdateShortcode()"> Dynamic Locations Grid</label>
+                                <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="foryou" onchange="gvsUpdateShortcode()"> "For You" Recommendation Widget</label>
+                            </div>
+                        </td>
+                    </tr>
                 </tbody>
-                <tbody id="gvs-sc-options-wrap" style="transition: opacity 0.2s;">
+
+                <!-- STANDARD PROPERTY GRID OPTIONS -->
+                <tbody id="gvs-sc-options-standard">
                     <tr><th scope="row" style="padding-top: 15px; padding-bottom: 10px;">Enable Search Bar</th><td style="padding-top: 15px; padding-bottom: 10px;"><label><input type="checkbox" id="gvs-sc-search" onchange="gvsUpdateShortcode()"> Show the unified search bar above the property grid.</label></td></tr>
                     <tr><th scope="row" style="padding-top: 0; padding-bottom: 10px;">Search Bar Only</th><td style="padding-top: 0; padding-bottom: 10px;"><label><input type="checkbox" id="gvs-sc-search-only" onchange="gvsUpdateShortcode()"> Only show the search bar (redirects to the Search Results Page upon clicking search).</label></td></tr>
                     <tr><th scope="row" style="padding-top: 0; padding-bottom: 10px;">Initial Tab (Optional)</th><td style="padding-top: 0; padding-bottom: 10px;"><select id="gvs-sc-start" onchange="gvsUpdateShortcode()"><option value="">- Default (All) -</option><?php $all_am = get_transient('guesty_all_amenities'); if(is_array($all_am)) { foreach($all_am as $am) echo '<option value="'.esc_attr($am).'">'.esc_html($am).'</option>'; } ?></select></td></tr>
@@ -545,6 +605,30 @@
                         <th scope="row" style="padding-bottom: 0;">Search Bar Overrides</th>
                         <td style="padding-bottom: 0;">
                             <p class="description" style="margin-top: 0;">Override backend settings manually by adding these attributes to your shortcode: <br><code>show_location="yes"</code>, <code>show_dates="no"</code>, <code>show_guests="yes"</code>, <code>show_bedrooms="yes"</code>, <code>show_amenity="yes"</code>, <code>show_pets="yes"</code>.</p>
+                        </td>
+                    </tr>
+                </tbody>
+
+                <!-- DYNAMIC LOCATIONS GRID BLURB -->
+                <tbody id="gvs-sc-options-locations" style="display: none;">
+                    <tr>
+                        <td colspan="2" style="padding: 20px 0 0 0;">
+                            <div style="background: #fff; border-left: 4px solid #b872e6; padding: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                <h4 style="margin: 0 0 8px 0; color: #1d2327; font-size: 15px;">Dynamic Locations Grid</h4>
+                                <p class="description" style="margin: 0; font-size: 14px;">Outputs a responsive bento-box grid of all your active property cities. Hovering over a location block triggers a randomized crossfade slideshow of beautiful waterfront images. Clicking a block automatically builds a Virtual Location Page filtered to that specific area.</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+
+                <!-- FOR YOU WIDGET BLURB -->
+                <tbody id="gvs-sc-options-foryou" style="display: none;">
+                    <tr>
+                        <td colspan="2" style="padding: 20px 0 0 0;">
+                            <div style="background: #fff; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                <h4 style="margin: 0 0 8px 0; color: #1d2327; font-size: 15px;">"For You" Recommendation Widget</h4>
+                                <p class="description" style="margin: 0; font-size: 14px;">Place this shortcode anywhere (e.g., your homepage). It remains invisible to new visitors, but automatically reveals itself as a personalized property carousel once a user starts interacting with your website (clicking properties, searching dates, etc.).</p>
+                            </div>
                         </td>
                     </tr>
                 </tbody>
@@ -621,6 +705,16 @@
                 <p>The plugin includes a smart, local-storage based recommendation engine that tracks a user's interactions (properties they click on, dates they search, locations they prefer) and scores your listings to present them with a highly personalized list of units.</p>
                 <p><strong>How to use it:</strong> Place the shortcode <code>[guesty_for_you]</code> on your homepage or anywhere you want to show recommendations. By default, it remains completely invisible to brand new users. Once a user searches or clicks a unit, the widget instantly reveals itself showing their personalized top matches.</p>
                 <p><em>Note: Because this feature respects user privacy and runs entirely in their browser, it will only appear once you interact with the main property grid or search bar!</em></p>
+            </div>
+
+            <div class="gvs-doc-section">
+                <h4>8. Dynamic Locations Grid & Virtual Pages</h4>
+                <p>The plugin includes an intelligent location routing system that automatically generates SEO-friendly virtual pages for every single unique location in your property portfolio.</p>
+                <ul>
+                    <li><strong>The Grid Shortcode:</strong> Place <code>[guesty_locations_grid]</code> on any page to render a responsive bento-box grid of your locations. Hovering over any card triggers a dynamic, randomized crossfade slideshow of waterfront images without slowing down page load.</li>
+                    <li><strong>Virtual Pages:</strong> When a user clicks a location (e.g. <code>yoursite.com/muskoka/</code>), the plugin intercepts the 404 error and dynamically builds a beautiful destination page on the fly using the Search Bar shortcode you define in the "Auto Locations" tab.</li>
+                    <li><strong>Smart Locker:</strong> The moment a Virtual Page loads, a background script instantly forces the search dropdown to match the URL (locking it so the user cannot change it) and automatically filters the properties to that specific region!</li>
+                </ul>
             </div>
 
         </div>
@@ -860,21 +954,21 @@
         const startTab = document.getElementById('gvs-sc-start').value;
         const hideTabs = document.getElementById('gvs-sc-hide').checked;
         
+        // Reset all views
+        document.getElementById('gvs-sc-options-standard').style.display = 'none';
+        document.getElementById('gvs-sc-options-locations').style.display = 'none';
+        document.getElementById('gvs-sc-options-foryou').style.display = 'none';
+        
         let sc = '';
         
         if (scType === 'foryou') {
+            document.getElementById('gvs-sc-options-foryou').style.display = 'table-row-group';
             sc = '[guesty_for_you]';
-            const optionsWrap = document.getElementById('gvs-sc-options-wrap');
-            if (optionsWrap) {
-                optionsWrap.style.opacity = '0.4';
-                optionsWrap.style.pointerEvents = 'none';
-            }
+        } else if (scType === 'locations') {
+            document.getElementById('gvs-sc-options-locations').style.display = 'table-row-group';
+            sc = '[guesty_locations_grid]';
         } else {
-            const optionsWrap = document.getElementById('gvs-sc-options-wrap');
-            if (optionsWrap) {
-                optionsWrap.style.opacity = '1';
-                optionsWrap.style.pointerEvents = 'auto';
-            }
+            document.getElementById('gvs-sc-options-standard').style.display = 'table-row-group';
             sc = '[guesty_perfect_stay';
             if (searchBar || searchOnly) sc += ` search_bar="true"`;
             if (searchOnly) sc += ` search_only="true"`;
@@ -923,6 +1017,7 @@
 
     // WP Media Uploader
     jQuery(document).ready(function($) {
+        // 1. Fallback Image Uploader
         var mediaUploader;
         $('#guesty_upload_fallback_btn').click(function(e) {
             e.preventDefault();
@@ -938,6 +1033,52 @@
         });
         $('#guesty_clear_fallback_btn').click(function(e){
             e.preventDefault(); $('#guesty_fallback_image').val(''); $('#guesty_fallback_preview').html('<span style="color: #646970; font-size: 13px;">No Image Set</span>'); $(this).hide();
+        });
+
+        // 2. Main Grid Background Uploader
+        var baseImgUploader;
+        $('#guesty_grid_base_btn').click(function(e) {
+            e.preventDefault();
+            if (baseImgUploader) { baseImgUploader.open(); return; }
+            baseImgUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Main Grid Background', button: { text: 'Use this Image' }, multiple: false });
+            baseImgUploader.on('select', function() {
+                var attachment = baseImgUploader.state().get('selection').first().toJSON();
+                $('#guesty_alc_grid_base_image').val(attachment.url);
+                $('#guesty_grid_base_preview').html('<img src="'+attachment.url+'" style="width: 100%; height: 100%; object-fit: cover;">');
+                $('#guesty_clear_grid_base_btn').show();
+            });
+            baseImgUploader.open();
+        });
+        $('#guesty_clear_grid_base_btn').click(function(e){
+            e.preventDefault(); $('#guesty_alc_grid_base_image').val(''); $('#guesty_grid_base_preview').html('<span style="color: #646970; font-size: 13px;">Default Muskoka</span>'); $(this).hide();
+        });
+
+        // 3. Hover Images Multi-Uploader (Repeater)
+        var hoverImgUploader;
+        $('#guesty_add_hover_img_btn').click(function(e) {
+            e.preventDefault();
+            if (hoverImgUploader) { hoverImgUploader.open(); return; }
+            hoverImgUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Random Hover Images', button: { text: 'Add to Randomizer' }, multiple: true });
+            hoverImgUploader.on('select', function() {
+                var selection = hoverImgUploader.state().get('selection');
+                selection.map(function(attachment) {
+                    attachment = attachment.toJSON();
+                    var url = attachment.url;
+                    var html = '<div class="guesty-hover-img-item" style="position:relative; width: 100px; height: 100px; border:1px solid #ccd0d4; border-radius:6px; overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">' +
+                               '<img src="'+url+'" style="width:100%; height:100%; object-fit:cover;">' +
+                               '<input type="hidden" name="guesty_alc_grid_hover_images[]" value="'+url+'">' +
+                               '<button type="button" class="guesty-remove-hover-img" style="position:absolute; top:4px; right:4px; background:#d63638; color:#fff; border:none; border-radius:50%; cursor:pointer; width:22px; height:22px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; line-height:1; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">&times;</button>' +
+                               '</div>';
+                    $('#guesty_hover_images_container').append(html);
+                });
+            });
+            hoverImgUploader.open();
+        });
+        
+        // Delegated removal of hover images
+        $(document).on('click', '.guesty-remove-hover-img', function(e) {
+            e.preventDefault();
+            $(this).closest('.guesty-hover-img-item').remove();
         });
     });
 </script>
