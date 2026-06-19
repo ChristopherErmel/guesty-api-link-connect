@@ -34,23 +34,34 @@ class Guesty_Locations_Grid_Shortcode {
 
     public function render_shortcode( $atts ) {
         $locations = $this->get_active_locations();
-        $base_bg_image = 'https://ocrvacations.com/wp-content/uploads/2026/02/Muskoka.jpg';
         
-        $hover_images = array(
-            'https://ocrvacations.com/wp-content/uploads/2026/02/ParrySound.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/02/Kawarthas.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/02/Haliburton-e1770394531747.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/ctmhcneb9aniojvc0thd-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/fuhdhrkep71sfjwsajac-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/zl4juztceneggmlrypqc.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/sislsfudf7crpicqwujr-1-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/ps5qjz0ehbt2ij13oo8s-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/d4qgze8t0njfrhqdfifa-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/agtxwnvpo0k39xtt8fep-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/zmtcfgewtaxtfmzmdmd1-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/sislsfudf7crpicqwujr-scaled.jpg',
-            'https://ocrvacations.com/wp-content/uploads/2026/06/aeexkmwf5hngluke1xer-scaled.jpg'
-        );
+        // Retrieve the customized base background from Admin Settings, or use default
+        $base_bg_image = get_option('guesty_alc_grid_base_image');
+        if ( empty($base_bg_image) ) {
+            $base_bg_image = 'https://ocrvacations.com/wp-content/uploads/2026/02/Muskoka.jpg';
+        }
+        
+        // Retrieve custom hover images array from Admin Settings
+        $hover_images = get_option('guesty_alc_grid_hover_images', []);
+        
+        // If the user hasn't added any yet, fall back to the default beautiful selection
+        if ( !is_array($hover_images) || empty($hover_images) ) {
+            $hover_images = array(
+                'https://ocrvacations.com/wp-content/uploads/2026/02/ParrySound.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/02/Kawarthas.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/02/Haliburton-e1770394531747.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/ctmhcneb9aniojvc0thd-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/fuhdhrkep71sfjwsajac-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/zl4juztceneggmlrypqc.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/sislsfudf7crpicqwujr-1-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/ps5qjz0ehbt2ij13oo8s-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/d4qgze8t0njfrhqdfifa-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/agtxwnvpo0k39xtt8fep-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/zmtcfgewtaxtfmzmdmd1-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/sislsfudf7crpicqwujr-scaled.jpg',
+                'https://ocrvacations.com/wp-content/uploads/2026/06/aeexkmwf5hngluke1xer-scaled.jpg'
+            );
+        }
         
         ob_start();
         ?>
