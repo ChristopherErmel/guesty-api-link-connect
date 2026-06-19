@@ -18,6 +18,26 @@ function guesty_alc_auto_loc_register_settings() {
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_bg_color', 'sanitize_hex_color');
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_search_color', 'sanitize_hex_color');
     register_setting('guesty-settings-group', 'guesty_alc_auto_loc_header_color', 'sanitize_hex_color');
+    
+    // New Media Settings
+    register_setting('guesty-settings-group', 'guesty_alc_grid_base_image', 'sanitize_url');
+    register_setting('guesty-settings-group', 'guesty_alc_grid_hover_images', array(
+        'type' => 'array',
+        'sanitize_callback' => 'guesty_alc_sanitize_url_array'
+    ));
+}
+
+// Custom sanitizer to safely clean an unlimited array of URLs
+function guesty_alc_sanitize_url_array($input) {
+    if (!is_array($input)) return array();
+    $clean = array();
+    foreach ($input as $url) {
+        $sanitized = sanitize_url($url);
+        if (!empty($sanitized)) {
+            $clean[] = $sanitized;
+        }
+    }
+    return $clean;
 }
 
 // 2. The Dynamic Page Handler
