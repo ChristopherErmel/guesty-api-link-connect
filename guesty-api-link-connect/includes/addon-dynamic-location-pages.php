@@ -129,15 +129,21 @@ function guesty_dynamic_location_page_handler() {
             .guesty-dynamic-location-header {
                 text-align: center;
                 margin-bottom: 40px;
-                font-family: Georgia, serif;
-                font-size: 3.5rem;
                 color: <?php echo esc_attr($header_color); ?> !important;
+                font-size: 2.5rem;
+                font-weight: 600;
+                font-family: 'Inter', sans-serif;
             }
             /* Targeting the Search Bar Container for custom colors */
             .guesty-dynamic-location-wrapper .gvs-search-bar,
             .guesty-dynamic-location-wrapper .gvs-search-bar-container {
                 background-color: <?php echo esc_attr($search_color); ?> !important;
                 border-color: <?php echo esc_attr($search_color); ?> !important; 
+            }
+            @media (min-width: 922px) {
+                .ast-container {
+                    max-width: 100%; 
+                }
             }
         </style>
 
