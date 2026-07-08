@@ -38,6 +38,7 @@ class Guesty_ALC_Admin {
         register_setting('guesty-settings-group', 'guesty_client_secret');
         register_setting('guesty-settings-group', 'guesty_base_url', 'sanitize_url');
         register_setting('guesty-settings-group', 'guesty_search_results_url', 'sanitize_text_field'); // NEW GLOBAL URL SETTING
+        register_setting('guesty-settings-group', 'guesty_enable_custom_fields_proxy');
         register_setting('guesty-settings-group', 'guesty_fallback_image', 'sanitize_url'); 
         register_setting('guesty-settings-group', 'guesty_cache_time_value');
         register_setting('guesty-settings-group', 'guesty_cache_time_unit');
