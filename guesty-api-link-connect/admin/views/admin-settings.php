@@ -132,6 +132,24 @@
 
                 <hr style="margin: 30px 0;">
 
+<h3 style="margin-top:0;">Guesty Unit Page Data Proxy</h3>
+                <p class="description">Enable a secure bridge to fetch Property Custom Fields directly onto your GuestyBooking.com unit pages using JavaScript.</p>
+                <table class="form-table">
+                    <tr valign="top">
+                        <th scope="row">Enable Custom Fields Proxy</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="guesty_enable_custom_fields_proxy" value="yes" <?php checked(get_option('guesty_enable_custom_fields_proxy', 'no'), 'yes'); ?> />
+                                <strong>Allow external JavaScript to securely fetch custom fields from your Guesty account.</strong>
+                            </label>
+                            <p class="description" style="margin-top: 8px;">Once enabled, you can fetch data from your Guesty unit pages using this endpoint URL:<br>
+                            <code style="display:inline-block; margin-top:4px; padding:6px; background:#f0f0f1; border-radius:4px; user-select:all;"><?php echo admin_url('admin-ajax.php'); ?>?action=guesty_proxy_custom_fields&id=PROPERTY_ID</code></p>
+                        </td>
+                    </tr>
+                </table>
+
+                <hr style="margin: 30px 0;">
+                
                 <h3 style="margin-top:0;">Pricing Display Options</h3>
                 <p class="description">Control exactly how the price text and currency behaves on the property cards.</p>
                 <table class="form-table">
