@@ -51,9 +51,21 @@ add_action('wp_ajax_guesty_proxy_custom_fields', [$this, 'ajax_proxy_custom_fiel
             exit;
         }
 
+        $cache_key = 'guesty_cf_proxy_' . $property_id;
+        $cached_fields = get_transient($cache_key);
+
+        if (false !== $cached_fields) {
+            // Serve instantly from WordPress memory
+            echo wp_json_encode($cached_fields);
+            exit;
+        }
+
+        // If not cached, fetch fresh data from Guesty
         $result = $this->api->get_listing_custom_fields($property_id);
 
         if ($result['success']) {
+            // Cache the successful result for 24 hours
+            set_transient($cache_key, $result, 24 * HOUR_IN_SECONDS);
             echo wp_json_encode($result);
         } else {
             http_response_code(500);
