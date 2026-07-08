@@ -148,6 +148,37 @@ class Guesty_ALC_API {
         return false;
     }
 
+     public function get_listing_custom_fields($property_id) {
+        $token = $this->get_access_token();
+        if (!$token) return ['success' => false, 'error' => 'Failed to authenticate with Guesty.'];
+
+        $url = $this->api_url . '/' . urlencode($property_id);
+        
+        $response = wp_remote_get($url, [
+            'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json' ],
+            'timeout' => 15
+        ]);
+
+        if (is_wp_error($response)) {
+            return ['success' => false, 'error' => 'WordPress cURL Error: ' . $response->get_error_message()];
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body_raw = wp_remote_retrieve_body($response);
+
+        if ($code !== 200) {
+            return ['success' => false, 'error' => "API returned HTTP {$code}", 'details' => json_decode($body_raw, true)];
+        }
+
+        $data = json_decode($body_raw, true);
+        
+        if (isset($data['customFields'])) {
+            return ['success' => true, 'customFields' => $data['customFields']];
+        }
+
+        return ['success' => true, 'customFields' => [], 'message' => 'No custom fields found for this property.'];
+    }
+
     private function parse_calendar_item($item, $start_date, $end_date, $fallback_lid = null) {
         $lid = isset($item['listingId']) ? $item['listingId'] : (isset($item['_id']) ? $item['_id'] : $fallback_lid);
         if (!$lid) return false;
