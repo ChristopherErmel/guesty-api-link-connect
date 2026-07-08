@@ -10,6 +10,9 @@ class Guesty_ALC_Frontend {
         add_shortcode('guesty_perfect_stay', [$this, 'render_shortcode']);
         add_action('wp_ajax_guesty_load_properties', [$this, 'ajax_load_properties']);
         add_action('wp_ajax_nopriv_guesty_load_properties', [$this, 'ajax_load_properties']);
+
+add_action('wp_ajax_guesty_proxy_custom_fields', [$this, 'ajax_proxy_custom_fields']);
+        add_action('wp_ajax_nopriv_guesty_proxy_custom_fields', [$this, 'ajax_proxy_custom_fields']);
         
         // Safely register frontend assets in WordPress (but don't load them yet)
         add_action('wp_enqueue_scripts', [$this, 'register_frontend_assets']);
@@ -28,6 +31,37 @@ class Guesty_ALC_Frontend {
         ]);
     }
 
+ public function ajax_proxy_custom_fields() {
+        // Crucial CORS headers to allow GuestyBooking.com to read this JSON response
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET');
+        header('Content-Type: application/json');
+
+        if (get_option('guesty_enable_custom_fields_proxy', 'no') !== 'yes') {
+            http_response_code(403);
+            echo wp_json_encode(['error' => 'Custom Fields Proxy is currently disabled in the plugin settings.']);
+            exit;
+        }
+
+        $property_id = isset($_GET['id']) ? preg_replace('/[^a-zA-Z0-9]/', '', $_GET['id']) : null;
+
+        if (!$property_id) {
+            http_response_code(400);
+            echo wp_json_encode(['error' => 'Property ID is required.']);
+            exit;
+        }
+
+        $result = $this->api->get_listing_custom_fields($property_id);
+
+        if ($result['success']) {
+            echo wp_json_encode($result);
+        } else {
+            http_response_code(500);
+            echo wp_json_encode($result);
+        }
+        exit;
+    }
+    
     public function ajax_load_properties() {
         // Security check
         check_ajax_referer('guesty_alc_frontend_nonce', 'nonce');
