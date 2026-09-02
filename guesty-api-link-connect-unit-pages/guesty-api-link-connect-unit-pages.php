@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Guesty API Link Connect - Unit Pages
  * Description: Add-on for Guesty API Link Connect. Automatically generates dedicated, SEO-friendly landing pages with real-time calendar validation for each imported unit.
- * Version: 4.21.0
+ * Version: 4.22.0
  * Author: Christopher E
  */
 
@@ -87,6 +87,11 @@ class Guesty_ALC_Unit_Pages {
         register_setting('guesty-settings-group', 'guesty_unit_show_cancellation_policy');
         register_setting('guesty-settings-group', 'guesty_unit_show_custom_fields');
         register_setting('guesty-settings-group', 'guesty_unit_show_full_calendar');
+        
+        // Calendar Colors
+        register_setting('guesty-settings-group', 'guesty_cal_color_available');
+        register_setting('guesty-settings-group', 'guesty_cal_color_unavailable');
+        register_setting('guesty-settings-group', 'guesty_cal_color_turnday');
     }
 
     public function add_rewrite_rules() {
@@ -161,6 +166,16 @@ class Guesty_ALC_Unit_Pages {
                         <p class="description">Optional markup percentage to apply to the nightly base rates calculated on the unit page.</p>
                     </td>
                 </tr>
+                
+                <tr valign="top">
+                    <th scope="row">Full Calendar Colors</th>
+                    <td>
+                        Available: <input type="color" name="guesty_cal_color_available" value="<?php echo esc_attr(get_option('guesty_cal_color_available', '#ffffff')); ?>" style="margin-right: 15px;" />
+                        Not Available: <input type="color" name="guesty_cal_color_unavailable" value="<?php echo esc_attr(get_option('guesty_cal_color_unavailable', '#facc15')); ?>" style="margin-right: 15px;" />
+                        Turn Day: <input type="color" name="guesty_cal_color_turnday" value="<?php echo esc_attr(get_option('guesty_cal_color_turnday', '#2563eb')); ?>" />
+                    </td>
+                </tr>
+
                 <tr valign="top">
                     <th scope="row">Page Background Color</th>
                     <td>
@@ -749,6 +764,11 @@ class Guesty_ALC_Unit_Pages {
         $thumb_count = (int) get_option('guesty_unit_thumb_count', 8);
         $unit_additional_css = get_option('guesty_unit_additional_css', '');
 
+        // Custom Calendar Colors
+        $cal_avail = get_option('guesty_cal_color_available', '#ffffff');
+        $cal_unavail = get_option('guesty_cal_color_unavailable', '#facc15');
+        $cal_turnday = get_option('guesty_cal_color_turnday', '#2563eb');
+
         // Gather all user visibility options
         $show_desc = get_option('guesty_unit_show_description', 'yes') === 'yes';
         $show_features = get_option('guesty_unit_show_features', 'yes') === 'yes';
@@ -788,7 +808,7 @@ class Guesty_ALC_Unit_Pages {
         $minNights = $terms['minNights'] ?? '';
         $maxNights = $terms['maxNights'] ?? '';
 
-        // Extract Turnday logic[cite: 2]
+        // Extract Turnday logic
         $turnday_val = '';
         if (!empty($custom_fields) && is_array($custom_fields)) {
             foreach ($custom_fields as $cf) {
@@ -825,8 +845,13 @@ class Guesty_ALC_Unit_Pages {
             body, .site-content, #content, .ast-container { background-color: <?php echo esc_attr($bg_color); ?> !important; }
             @media (min-width: 922px) { .ast-container { max-width: 100% !important; } }
 
-            .gvs-unit-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1200px; margin: 40px auto; padding: 0 20px; color: #1d2327; }
-            .gvs-unit-slider-wrapper { margin-bottom: 40px; }
+            /* Grid Fixes & Wrapper Constraints */
+            .gvs-unit-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1200px; margin: 40px auto; padding: 0 20px; color: #1d2327; overflow: hidden; box-sizing: border-box; }
+            .gvs-unit-slider-wrapper { margin-bottom: 40px; min-width: 0; width: 100%; overflow: hidden; }
+            .gvs-unit-content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 60px; }
+            .gvs-unit-main { min-width: 0; overflow: hidden; } /* Prevents Swiper & Calendar blow-outs */
+            @media(max-width: 900px) { .gvs-unit-content-grid { grid-template-columns: 1fr; gap: 40px; } }
+
             .swiper-main { width: 100%; height: 500px; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
             .swiper-main img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
             .swiper-thumbs { width: 100%; height: 100px; box-sizing: border-box; padding: 0; }
@@ -846,19 +871,16 @@ class Guesty_ALC_Unit_Pages {
             .gvs-lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #f8fafc; font-size: 40px; cursor: pointer; z-index: 1000000; padding: 20px; border-radius: 8px; }
             .gvs-lightbox-prev { left: 2vw; } .gvs-lightbox-next { right: 2vw; }
 
-            .gvs-unit-content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 60px; }
-            @media(max-width: 900px) { .gvs-unit-content-grid { grid-template-columns: 1fr; gap: 40px; } }
-
             .gvs-unit-breadcrumbs { font-size: 14px; color: #64748b; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
             .gvs-unit-breadcrumbs a { color: #64748b; text-decoration: none; }
-            .gvs-unit-title { font-size: 36px; font-weight: 700; margin: 0 0 12px 0; color: #0f172a; line-height: 1.2; }
+            .gvs-unit-title { font-size: 36px; font-weight: 700; margin: 0 0 12px 0; color: #0f172a; line-height: 1.2; word-wrap: break-word; }
             .gvs-unit-section-title { font-size: 20px; font-weight: 600; margin: 30px 0 16px 0; color: #0f172a; }
             .gvs-unit-divider { height: 1px; background: #e2e8f0; width: 100%; margin: 30px 0; }
 
             .gvs-unit-description-group .gvs-unit-section-title { margin-top: 30px; }
             .gvs-unit-description-group .gvs-unit-section-title:first-child { margin-top: 15px; }
 
-            .gvs-expandable-text { font-size: 16px; line-height: 1.6; color: #475569; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+            .gvs-expandable-text { font-size: 16px; line-height: 1.6; color: #475569; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; word-wrap: break-word; }
             .gvs-expandable-text.expanded { -webkit-line-clamp: initial; display: block; }
             .gvs-expandable-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; max-height: 140px; overflow: hidden; }
             .gvs-expandable-grid.expanded { max-height: 2000px; }
@@ -871,18 +893,19 @@ class Guesty_ALC_Unit_Pages {
             .gvs-unit-am-item { display: flex; align-items: center; gap: 12px; font-size: 15px; color: #334155; }
             .gvs-unit-am-item i { font-size: 24px; color: #64748b; }
             
-            .gvs-custom-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 15px; color: #475569; }
+            .gvs-custom-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 15px; color: #475569; word-wrap: break-word; }
             .gvs-cf-item strong { color: #0f172a; font-weight: 600; }
+            @media(max-width: 600px) { .gvs-custom-fields-grid { grid-template-columns: 1fr; } }
             
             .gvs-unit-map-wrapper { width: 100%; height: 350px; border-radius: 12px; overflow: hidden; margin-top: 15px; border: 1px solid #e2e8f0; }
 
             .gvs-booking-widget { position: sticky; top: 100px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
             .gvs-bw-input-wrap { border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
             .gvs-bw-dates { display: flex; border-bottom: 1px solid #cbd5e1; }
-            .gvs-bw-date-box { flex: 1; padding: 12px; cursor: pointer; }
+            .gvs-bw-date-box { flex: 1; padding: 12px; cursor: pointer; min-width: 0; }
             .gvs-bw-date-box:first-child { border-right: 1px solid #cbd5e1; }
             .gvs-bw-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #0f172a; margin-bottom: 4px; display: block; }
-            .gvs-bw-input { width: 100%; border: none; font-size: 15px; outline: none; background: transparent; padding: 0; color: #475569; cursor: pointer; height: 20px; }
+            .gvs-bw-input { width: 100%; border: none; font-size: 15px; outline: none; background: transparent; padding: 0; color: #475569; cursor: pointer; height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .gvs-bw-guests { padding: 12px; }
 
             .gvs-quote-breakdown { display: none; margin-bottom: 20px; position: relative; }
@@ -897,7 +920,7 @@ class Guesty_ALC_Unit_Pages {
             .gvs-coupon-header svg { width: 12px; height: 12px; transition: transform 0.2s; }
             .gvs-coupon-content { display: none; padding-top: 15px; }
             .gvs-coupon-input-wrap { display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; }
-            .gvs-coupon-input { flex-grow: 1; border: none; padding: 10px; outline: none; font-size: 14px; }
+            .gvs-coupon-input { flex-grow: 1; border: none; padding: 10px; outline: none; font-size: 14px; min-width: 0; }
             .gvs-coupon-btn { background: #f1f5f9; border: none; border-left: 1px solid #cbd5e1; padding: 10px 15px; font-weight: 600; cursor: pointer; color: #0f172a; }
 
             .gvs-quote-line { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #334155; }
@@ -910,35 +933,42 @@ class Guesty_ALC_Unit_Pages {
             .gvs-bw-btn { width: 100%; background: <?php echo esc_attr($btn_color); ?>; color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
             .gvs-bw-error { display: none; color: #dc2626; font-size: 13px; margin-bottom: 12px; text-align: center; font-weight: 500; }
 
-            /* Full Width Inline Calendar CSS */
-            #gvs-inline-calendar-container { margin-bottom: 15px; margin-top: 20px; }
+            /* Full Width Inline Calendar CSS with Strict Overrides */
+            #gvs-inline-calendar-container { margin-bottom: 15px; margin-top: 20px; width: 100%; }
             #gvs-inline-calendar-container .flatpickr-calendar.inline { width: 100% !important; border: none !important; box-shadow: none !important; padding: 0 !important; background: transparent !important; }
-            #gvs-inline-calendar-container .flatpickr-months { width: 100% !important; display: flex; flex-wrap: wrap; margin-bottom: 10px !important; }
-            #gvs-inline-calendar-container .flatpickr-month { width: calc(100% / 3) !important; }
-            #gvs-inline-calendar-container .flatpickr-innerContainer { display: block !important; width: 100% !important; }
-            #gvs-inline-calendar-container .flatpickr-days { width: 100% !important; display: flex; flex-wrap: wrap; border: none !important; }
-            #gvs-inline-calendar-container .dayContainer { width: calc(100% / 3) !important; min-width: 0 !important; max-width: none !important; box-sizing: border-box; padding: 0 10px !important; margin-bottom: 20px; justify-content: center; }
+            #gvs-inline-calendar-container .flatpickr-innerContainer { display: block !important; width: 100% !important; overflow: hidden !important; }
+            #gvs-inline-calendar-container .flatpickr-rContainer { width: 100% !important; }
+            
+            #gvs-inline-calendar-container .flatpickr-months { width: 100% !important; display: flex !important; flex-wrap: wrap !important; margin-bottom: 10px !important; }
+            #gvs-inline-calendar-container .flatpickr-weekdays { width: 100% !important; display: flex !important; flex-wrap: wrap !important; }
+            #gvs-inline-calendar-container .flatpickr-days { width: 100% !important; display: flex !important; flex-wrap: wrap !important; border: none !important; }
+            
+            #gvs-inline-calendar-container .flatpickr-month { width: calc(100% / 3) !important; flex: 0 0 calc(100% / 3) !important; max-width: calc(100% / 3) !important; }
+            #gvs-inline-calendar-container .flatpickr-weekdaycontainer { width: calc(100% / 3) !important; flex: 0 0 calc(100% / 3) !important; max-width: calc(100% / 3) !important; padding: 0 10px !important; box-sizing: border-box !important;}
+            #gvs-inline-calendar-container .dayContainer { width: calc(100% / 3) !important; flex: 0 0 calc(100% / 3) !important; max-width: calc(100% / 3) !important; min-width: 0 !important; box-sizing: border-box !important; padding: 0 10px !important; margin-bottom: 20px !important; justify-content: center !important; }
             
             @media (max-width: 900px) {
                 #gvs-inline-calendar-container .flatpickr-month,
-                #gvs-inline-calendar-container .dayContainer { width: 50% !important; }
+                #gvs-inline-calendar-container .flatpickr-weekdaycontainer,
+                #gvs-inline-calendar-container .dayContainer { width: 50% !important; flex: 0 0 50% !important; max-width: 50% !important; }
             }
             @media (max-width: 600px) {
                 #gvs-inline-calendar-container .flatpickr-month,
-                #gvs-inline-calendar-container .dayContainer { width: 100% !important; }
+                #gvs-inline-calendar-container .flatpickr-weekdaycontainer,
+                #gvs-inline-calendar-container .dayContainer { width: 100% !important; flex: 0 0 100% !important; max-width: 100% !important; }
             }
 
-            #gvs-inline-calendar-container .flatpickr-day { border-radius: 0 !important; border: 1px solid #e2e8f0 !important; max-width: 100% !important; margin: 0 !important; height: 36px !important; line-height: 36px !important; margin-top: 1px !important; color: #1d2327 !important; background: #fff !important; }
-            #gvs-inline-calendar-container .flatpickr-day.flatpickr-disabled { background: #facc15 !important; color: #fff !important; border-color: #eab308 !important; text-decoration: none !important; }
-            #gvs-inline-calendar-container .flatpickr-day.gvs-turnday-cell { border: 2px solid #2563eb !important; color: #2563eb !important; font-weight: 700; z-index: 2; }
-            #gvs-inline-calendar-container .flatpickr-day.flatpickr-disabled.gvs-turnday-cell { border: 2px solid #2563eb !important; color: #2563eb !important; }
+            #gvs-inline-calendar-container .flatpickr-day { border-radius: 0 !important; border: 1px solid #e2e8f0 !important; max-width: 100% !important; margin: 0 !important; height: 36px !important; line-height: 36px !important; margin-top: 1px !important; color: #1d2327 !important; background: <?php echo esc_attr($cal_avail); ?> !important; }
+            #gvs-inline-calendar-container .flatpickr-day.flatpickr-disabled { background: <?php echo esc_attr($cal_unavail); ?> !important; color: #fff !important; border-color: <?php echo esc_attr($cal_unavail); ?> !important; text-decoration: none !important; }
+            #gvs-inline-calendar-container .flatpickr-day.gvs-turnday-cell { border: 2px solid <?php echo esc_attr($cal_turnday); ?> !important; color: <?php echo esc_attr($cal_turnday); ?> !important; font-weight: 700; z-index: 2; }
+            #gvs-inline-calendar-container .flatpickr-day.flatpickr-disabled.gvs-turnday-cell { border: 2px solid <?php echo esc_attr($cal_turnday); ?> !important; color: #fff !important; }
             
             .gvs-calendar-legend { display: flex; gap: 20px; justify-content: center; margin-top: 10px; font-size: 14px; font-weight: 600; color: #0f172a; flex-wrap: wrap; }
             .gvs-legend-item { display: flex; align-items: center; gap: 8px; }
             .gvs-legend-box { width: 16px; height: 16px; border-radius: 2px; }
-            .gvs-legend-box.available { background: #fff; border: 1px solid #cbd5e1; }
-            .gvs-legend-box.unavailable { background: #facc15; }
-            .gvs-legend-box.turnday { border: 2px solid #2563eb; background: #fff; }
+            .gvs-legend-box.available { background: <?php echo esc_attr($cal_avail); ?>; border: 1px solid #cbd5e1; }
+            .gvs-legend-box.unavailable { background: <?php echo esc_attr($cal_unavail); ?>; }
+            .gvs-legend-box.turnday { border: 2px solid <?php echo esc_attr($cal_turnday); ?>; background: <?php echo esc_attr($cal_avail); ?>; }
 
             .flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { color: #cbd5e1 !important; background: #f8fafc !important; cursor: not-allowed !important; text-decoration: line-through; }
             @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -979,7 +1009,7 @@ class Guesty_ALC_Unit_Pages {
                     <?php 
                     $needs_divider = false;
 
-                    // 1. DESCRIPTION & EXTENDED TEXT GROUP[cite: 2]
+                    // 1. DESCRIPTION & EXTENDED TEXT GROUP
                     echo '<div class="gvs-unit-description-group">';
                     if ($show_desc && !empty($property['description'])) {
                         echo '<h3 class="gvs-unit-section-title">Description</h3>';
@@ -1118,7 +1148,7 @@ class Guesty_ALC_Unit_Pages {
                         $needs_divider = true;
                     }
 
-                    // 7. FULL AVAILABILITY CALENDAR[cite: 2]
+                    // 7. FULL AVAILABILITY CALENDAR
                     if ($show_full_calendar) {
                         if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
                         ?>
@@ -1179,7 +1209,7 @@ class Guesty_ALC_Unit_Pages {
                             </div>
                             <div class="gvs-quote-divider"></div>
                             <div>
-                                <div class="gvs-coupon-header" id="gvs-coupon-trigger">I have a coupon <svg id="gvs-coupon-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+                                <div class="gvs-coupon-header" id="gvs-coupon-trigger">I have a coupon <svg id="gvs-coupon-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></div>
                                 <div class="gvs-coupon-content" id="gvs-coupon-content">
                                     <div class="gvs-coupon-input-wrap">
                                         <input type="text" id="gvs-coupon-input" class="gvs-coupon-input" placeholder="Coupon code">
@@ -1192,7 +1222,7 @@ class Guesty_ALC_Unit_Pages {
                             
                             <div class="gvs-quote-accordion-wrapper" id="gvs-q-fees-wrap" style="display:none;">
                                 <div class="gvs-quote-line gvs-quote-accordion-header" onclick="this.parentElement.classList.toggle('open')">
-                                    <span style="display:flex; align-items:center; cursor:pointer;">Fees <svg style="width:14px; margin-left:4px; transition:transform 0.2s;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+                                    <span style="display:flex; align-items:center; cursor:pointer;">Fees <svg style="width:14px; margin-left:4px; transition:transform 0.2s;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg></span>
                                     <strong id="gvs-q-fees">-</strong>
                                 </div>
                                 <div class="gvs-quote-accordion-content" id="gvs-q-fees-list"></div>
@@ -1203,7 +1233,7 @@ class Guesty_ALC_Unit_Pages {
                             
                             <div class="gvs-quote-accordion-wrapper" id="gvs-q-taxes-wrap" style="display:none;">
                                 <div class="gvs-quote-line gvs-quote-accordion-header" onclick="this.parentElement.classList.toggle('open')">
-                                    <span style="display:flex; align-items:center; cursor:pointer;">Taxes <svg style="width:14px; margin-left:4px; transition:transform 0.2s;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+                                    <span style="display:flex; align-items:center; cursor:pointer;">Taxes <svg style="width:14px; margin-left:4px; transition:transform 0.2s;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg></span>
                                     <strong id="gvs-q-taxes">-</strong>
                                 </div>
                                 <div class="gvs-quote-accordion-content" id="gvs-q-taxes-list"></div>
@@ -1260,6 +1290,8 @@ class Guesty_ALC_Unit_Pages {
                 }
                 var swiperMain = new Swiper(".swiper-main", {
                     spaceBetween: 10,
+                    observer: true,
+                    observeParents: true,
                     navigation: { nextEl: ".swiper-button-next", prevEl: ".swiper-button-prev" },
                     thumbs: { swiper: (typeof swiperThumbs !== 'undefined') ? swiperThumbs : null }
                 });
@@ -1373,7 +1405,7 @@ class Guesty_ALC_Unit_Pages {
                 fpAnchor.type = 'text'; fpAnchor.style.position = 'absolute'; fpAnchor.style.visibility = 'hidden'; fpAnchor.style.width = '0'; fpAnchor.style.height = '0';
                 checkin.parentNode.appendChild(fpAnchor);
                 
-                // Full Display Calendar Logic[cite: 2]
+                // Full Display Calendar Logic
                 let fpInline = null;
                 const fpInlineAnchor = document.getElementById('gvs-inline-calendar-anchor');
                 const turnDayString = '<?php echo esc_js($turnday_val); ?>'.toLowerCase();
@@ -1519,7 +1551,7 @@ class Guesty_ALC_Unit_Pages {
                         }
                     });
 
-                    // 2. Full Inline 6-Month Display Calendar[cite: 2]
+                    // 2. Full Inline 6-Month Display Calendar
                     if (fpInlineAnchor) {
                         fpInline = flatpickr(fpInlineAnchor, {
                             inline: true,
@@ -1550,7 +1582,7 @@ class Guesty_ALC_Unit_Pages {
 
                     trigger.addEventListener('click', () => { if (!fp.isOpen) fp.open(); });
 
-                    // Silently stream in blocked dates from cached endpoint and apply to both calendars[cite: 2]
+                    // Silently stream in blocked dates from cached endpoint and apply to both calendars
                     const calFormData = new URLSearchParams();
                     calFormData.append('action', 'guesty_get_unit_calendar');
                     calFormData.append('nonce', '<?php echo wp_create_nonce("guesty_unit_ajax_nonce"); ?>');
