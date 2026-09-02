@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Guesty API Link Connect - Unit Pages
  * Description: Add-on for Guesty API Link Connect. Automatically generates dedicated, SEO-friendly landing pages with real-time calendar validation for each imported unit.
- * Version: 4.18.0
+ * Version: 4.20.0
  * Author: Christopher E
  */
 
@@ -54,15 +54,38 @@ class Guesty_ALC_Unit_Pages {
     }
 
     public function register_settings() {
+        // Base Configurations
         register_setting('guesty-settings-group', 'guesty_unit_page_slug', 'sanitize_title');
         register_setting('guesty-settings-group', 'guesty_unit_btn_color');
         register_setting('guesty-settings-group', 'guesty_unit_bg_color');
-        register_setting('guesty-settings-group', 'guesty_unit_show_map');
-        register_setting('guesty-settings-group', 'guesty_unit_show_times');
         register_setting('guesty-settings-group', 'guesty_unit_thumb_count');
         register_setting('guesty-settings-group', 'guesty_channel_markup');
         register_setting('guesty-settings-group', 'guesty_unit_checkout_url', 'sanitize_url');
         register_setting('guesty-settings-group', 'guesty_unit_additional_css');
+
+        // Dynamic Display Visibility Toggles
+        register_setting('guesty-settings-group', 'guesty_unit_show_description');
+        register_setting('guesty-settings-group', 'guesty_unit_show_features');
+        register_setting('guesty-settings-group', 'guesty_unit_show_property_type');
+        register_setting('guesty-settings-group', 'guesty_unit_show_beds');
+        register_setting('guesty-settings-group', 'guesty_unit_show_amenities');
+        register_setting('guesty-settings-group', 'guesty_unit_show_times');
+        register_setting('guesty-settings-group', 'guesty_unit_show_map');
+        
+        // Extended Text Fields
+        register_setting('guesty-settings-group', 'guesty_unit_show_space');
+        register_setting('guesty-settings-group', 'guesty_unit_show_access');
+        register_setting('guesty-settings-group', 'guesty_unit_show_notes');
+        register_setting('guesty-settings-group', 'guesty_unit_show_neighborhood');
+        register_setting('guesty-settings-group', 'guesty_unit_show_transit');
+        register_setting('guesty-settings-group', 'guesty_unit_show_directions');
+        register_setting('guesty-settings-group', 'guesty_unit_show_house_rules');
+        register_setting('guesty-settings-group', 'guesty_unit_show_interaction');
+        
+        // Policies & Custom Fields
+        register_setting('guesty-settings-group', 'guesty_unit_show_min_max_nights');
+        register_setting('guesty-settings-group', 'guesty_unit_show_cancellation_policy');
+        register_setting('guesty-settings-group', 'guesty_unit_show_custom_fields');
     }
 
     public function add_rewrite_rules() {
@@ -85,6 +108,35 @@ class Guesty_ALC_Unit_Pages {
             <p class="description" style="margin-top:-5px; margin-bottom: 20px;">This add-on safely intercepts requests and generates dynamic landing pages for each of your synced properties with real-time calendar checks.</p>
             
             <table class="form-table">
+                <tr valign="top">
+                    <th scope="row">Visible Content Sections</th>
+                    <td>
+                        <p class="description" style="margin-top: 0; margin-bottom: 15px;">Select which sections of the property listing should be displayed on the page. Extended details will be dynamically fetched directly from Guesty to save server memory.</p>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 600px; background: #f9fafb; border: 1px solid #e5e7eb; padding: 15px; border-radius: 6px;">
+                            <label><input type="checkbox" name="guesty_unit_show_description" value="yes" <?php checked(get_option('guesty_unit_show_description', 'yes'), 'yes'); ?> /> Main Description</label>
+                            <label><input type="checkbox" name="guesty_unit_show_features" value="yes" <?php checked(get_option('guesty_unit_show_features', 'yes'), 'yes'); ?> /> Bedrooms & Bathrooms</label>
+                            <label><input type="checkbox" name="guesty_unit_show_beds" value="yes" <?php checked(get_option('guesty_unit_show_beds', 'yes'), 'yes'); ?> /> Number of Beds</label>
+                            <label><input type="checkbox" name="guesty_unit_show_property_type" value="yes" <?php checked(get_option('guesty_unit_show_property_type', 'yes'), 'yes'); ?> /> Property Type</label>
+                            <label><input type="checkbox" name="guesty_unit_show_amenities" value="yes" <?php checked(get_option('guesty_unit_show_amenities', 'yes'), 'yes'); ?> /> Amenities Grid</label>
+                            <label><input type="checkbox" name="guesty_unit_show_times" value="yes" <?php checked(get_option('guesty_unit_show_times', 'yes'), 'yes'); ?> /> Check-in / out Times</label>
+                            <label><input type="checkbox" name="guesty_unit_show_min_max_nights" value="yes" <?php checked(get_option('guesty_unit_show_min_max_nights', 'yes'), 'yes'); ?> /> Min / Max Nights</label>
+                            <label><input type="checkbox" name="guesty_unit_show_cancellation_policy" value="yes" <?php checked(get_option('guesty_unit_show_cancellation_policy', 'yes'), 'yes'); ?> /> Cancellation Policy</label>
+                            
+                            <label><input type="checkbox" name="guesty_unit_show_space" value="yes" <?php checked(get_option('guesty_unit_show_space', 'no'), 'yes'); ?> /> The Space Details</label>
+                            <label><input type="checkbox" name="guesty_unit_show_access" value="yes" <?php checked(get_option('guesty_unit_show_access', 'no'), 'yes'); ?> /> Guest Access Details</label>
+                            <label><input type="checkbox" name="guesty_unit_show_notes" value="yes" <?php checked(get_option('guesty_unit_show_notes', 'no'), 'yes'); ?> /> Other Notes</label>
+                            <label><input type="checkbox" name="guesty_unit_show_house_rules" value="yes" <?php checked(get_option('guesty_unit_show_house_rules', 'no'), 'yes'); ?> /> House Rules</label>
+                            <label><input type="checkbox" name="guesty_unit_show_interaction" value="yes" <?php checked(get_option('guesty_unit_show_interaction', 'no'), 'yes'); ?> /> Guest Interaction</label>
+                            <label><input type="checkbox" name="guesty_unit_show_neighborhood" value="yes" <?php checked(get_option('guesty_unit_show_neighborhood', 'no'), 'yes'); ?> /> Neighborhood</label>
+                            <label><input type="checkbox" name="guesty_unit_show_transit" value="yes" <?php checked(get_option('guesty_unit_show_transit', 'no'), 'yes'); ?> /> Transit</label>
+                            <label><input type="checkbox" name="guesty_unit_show_map" value="yes" <?php checked(get_option('guesty_unit_show_map', 'yes'), 'yes'); ?> /> Location Map</label>
+                            <label><input type="checkbox" name="guesty_unit_show_directions" value="yes" <?php checked(get_option('guesty_unit_show_directions', 'no'), 'yes'); ?> /> Directions</label>
+                            <label><input type="checkbox" name="guesty_unit_show_custom_fields" value="yes" <?php checked(get_option('guesty_unit_show_custom_fields', 'no'), 'yes'); ?> /> Custom Fields Grid</label>
+                        </div>
+                    </td>
+                </tr>
+
                 <tr valign="top">
                     <th scope="row">Base URL Slug</th>
                     <td>
@@ -123,24 +175,6 @@ class Guesty_ALC_Unit_Pages {
                     <td>
                         <input type="number" name="guesty_unit_thumb_count" value="<?php echo esc_attr(get_option('guesty_unit_thumb_count', '8')); ?>" style="width: 80px;" min="1" max="30" />
                         <span class="description" style="margin-left: 8px;">Number of thumbnails to display visibly in the gallery track.</span>
-                    </td>
-                </tr>
-                <tr valign="top">
-                    <th scope="row">Show Check-in Times</th>
-                    <td>
-                        <label>
-                            <input type="checkbox" name="guesty_unit_show_times" value="yes" <?php checked(get_option('guesty_unit_show_times', 'yes'), 'yes'); ?> />
-                            Display standard Check-in and Check-out times beneath the description.
-                        </label>
-                    </td>
-                </tr>
-                <tr valign="top">
-                    <th scope="row">Show Location Map</th>
-                    <td>
-                        <label>
-                            <input type="checkbox" name="guesty_unit_show_map" value="yes" <?php checked(get_option('guesty_unit_show_map', 'yes'), 'yes'); ?> />
-                            Display a Google Map at the bottom of the unit page based on its city/country.
-                        </label>
                     </td>
                 </tr>
             </table>
@@ -183,6 +217,8 @@ class Guesty_ALC_Unit_Pages {
                 { selector: '.gvs-unit-features', desc: 'The horizontal wrapper containing Bedrooms, Guests, Bathrooms.' },
                 { selector: '.gvs-expandable-grid', desc: 'The grid container holding all the amenities.' },
                 { selector: '.gvs-unit-am-item', desc: 'An individual amenity item in the grid (icon + text).' },
+                { selector: '.gvs-custom-fields-grid', desc: 'The grid holding custom field data elements.' },
+                { selector: '.gvs-cf-item', desc: 'An individual custom field output block.' },
                 { selector: '.gvs-booking-widget', desc: 'The sticky booking form contained in the right sidebar.' },
                 { selector: '.gvs-bw-btn', desc: 'The main "Book" button in the widget.' },
                 { selector: '.gvs-quote-grid', desc: 'The 4-column breakdown grid (Check In, Out, Nights, Guests).' },
@@ -275,6 +311,33 @@ class Guesty_ALC_Unit_Pages {
             return $body['access_token'];
         }
         return false;
+    }
+
+    // Dynamic Fetcher: Grabs full API data for advanced fields, cached 24h
+    private function get_full_listing($unit_id) {
+        $cache_key = 'guesty_full_unit_' . md5($unit_id);
+        $cached = get_transient($cache_key);
+        if ($cached) return $cached;
+
+        $token = $this->get_access_token();
+        if (!$token) return [];
+
+        $url = "https://open-api.guesty.com/v1/listings/{$unit_id}";
+        $response = wp_remote_get($url, [
+            'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json' ],
+            'timeout' => 15
+        ]);
+
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) == 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (is_array($body)) {
+                set_transient($cache_key, $body, 24 * HOUR_IN_SECONDS);
+                return $body;
+            }
+        } else {
+             set_transient($cache_key, [], 5 * MINUTE_IN_SECONDS);
+        }
+        return [];
     }
 
     private function evaluate_guesty_rules($snapshot, $days_array, $check_in, $check_out, $guests_count) {
@@ -680,10 +743,46 @@ class Guesty_ALC_Unit_Pages {
     private function print_html_layout($property) {
         $btn_color = get_option('guesty_unit_btn_color', '#0062ff');
         $bg_color = get_option('guesty_unit_bg_color', '#ffffff');
-        $show_map = get_option('guesty_unit_show_map', 'yes') === 'yes';
-        $show_times = get_option('guesty_unit_show_times', 'yes') === 'yes';
         $thumb_count = (int) get_option('guesty_unit_thumb_count', 8);
         $unit_additional_css = get_option('guesty_unit_additional_css', '');
+
+        // Gather all user visibility options
+        $show_desc = get_option('guesty_unit_show_description', 'yes') === 'yes';
+        $show_features = get_option('guesty_unit_show_features', 'yes') === 'yes';
+        $show_property_type = get_option('guesty_unit_show_property_type', 'yes') === 'yes';
+        $show_beds = get_option('guesty_unit_show_beds', 'yes') === 'yes';
+        $show_amenities = get_option('guesty_unit_show_amenities', 'yes') === 'yes';
+        $show_times = get_option('guesty_unit_show_times', 'yes') === 'yes';
+        $show_map = get_option('guesty_unit_show_map', 'yes') === 'yes';
+        
+        $show_space = get_option('guesty_unit_show_space', 'no') === 'yes';
+        $show_access = get_option('guesty_unit_show_access', 'no') === 'yes';
+        $show_notes = get_option('guesty_unit_show_notes', 'no') === 'yes';
+        $show_neighborhood = get_option('guesty_unit_show_neighborhood', 'no') === 'yes';
+        $show_transit = get_option('guesty_unit_show_transit', 'no') === 'yes';
+        $show_directions = get_option('guesty_unit_show_directions', 'no') === 'yes';
+        $show_house_rules = get_option('guesty_unit_show_house_rules', 'no') === 'yes';
+        $show_interaction = get_option('guesty_unit_show_interaction', 'no') === 'yes';
+        
+        $show_min_max_nights = get_option('guesty_unit_show_min_max_nights', 'yes') === 'yes';
+        $show_cancel_policy = get_option('guesty_unit_show_cancellation_policy', 'yes') === 'yes';
+        $show_custom_fields = get_option('guesty_unit_show_custom_fields', 'yes') === 'yes';
+
+        // Check if we need to ping the API for extended data payload
+        $fetch_full_data = $show_space || $show_access || $show_notes || $show_neighborhood || $show_transit || $show_house_rules || $show_interaction || $show_cancel_policy || $show_directions || $show_custom_fields || $show_min_max_nights || $show_beds;
+        
+        $full = $fetch_full_data ? $this->get_full_listing($property['id']) : [];
+        $public_desc = $full['publicDescription'] ?? [];
+        $terms = $full['terms'] ?? [];
+        $address = $full['address'] ?? [];
+        
+        // Data Mappings
+        $directions = $address['directions'] ?? ($full['directions'] ?? '');
+        $cancellation = $terms['cancellationPolicy']['description'] ?? (is_string($terms['cancellationPolicy'] ?? '') ? $terms['cancellationPolicy'] : '');
+        $custom_fields = $full['customFields'] ?? [];
+        $total_beds = $full['beds'] ?? ($property['beds'] ?? 0);
+        $minNights = $terms['minNights'] ?? '';
+        $maxNights = $terms['maxNights'] ?? '';
 
         $checkout_base_url = get_option('guesty_unit_checkout_url', get_option('guesty_base_url', ''));
         $checkout_link = $checkout_base_url ? (rtrim($checkout_base_url, '/') . '/' . $property['id'] . '/checkout') : '#';
@@ -752,6 +851,10 @@ class Guesty_ALC_Unit_Pages {
             .gvs-unit-feature-text { font-size: 15px; font-weight: 500; color: #0f172a; }
             .gvs-unit-am-item { display: flex; align-items: center; gap: 12px; font-size: 15px; color: #334155; }
             .gvs-unit-am-item i { font-size: 24px; color: #64748b; }
+            
+            .gvs-custom-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 15px; color: #475569; }
+            .gvs-cf-item strong { color: #0f172a; font-weight: 600; }
+            
             .gvs-unit-map-wrapper { width: 100%; height: 350px; border-radius: 12px; overflow: hidden; margin-top: 15px; border: 1px solid #e2e8f0; }
 
             .gvs-booking-widget { position: sticky; top: 100px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
@@ -824,49 +927,188 @@ class Guesty_ALC_Unit_Pages {
                     </div>
                     <h1 class="gvs-unit-title"><?php echo esc_html($property['title']); ?></h1>
                     
-                    <h3 class="gvs-unit-section-title" style="margin-top: 20px;">Description</h3>
-                    <div class="gvs-expandable-text" id="gvs-desc-content"><?php echo !empty($property['description']) ? esc_html($property['description']) : 'A beautiful place to stay in ' . esc_html($property['city']) . '.'; ?></div>
-                    <button class="gvs-show-all-btn" onclick="toggleExpand('gvs-desc-content', this)">Show all</button>
+                    <?php 
+                    $needs_divider = false;
 
-                    <?php if ($show_times): ?>
-                    <div style="margin-top: 30px;">
-                        <h4 style="font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0;">Check in and out</h4>
-                        <div style="font-size: 15px; color: #475569; margin-bottom: 4px;">Check in: <?php echo isset($property['checkInTime']) ? esc_html($property['checkInTime']) : '04:00 PM'; ?></div>
-                        <div style="font-size: 15px; color: #475569;">Check out: <?php echo isset($property['checkOutTime']) ? esc_html($property['checkOutTime']) : '10:00 AM'; ?></div>
-                    </div>
-                    <?php endif; ?>
-
-                    <div class="gvs-unit-divider"></div>
-                    <h3 class="gvs-unit-section-title">Property Features</h3>
-                    <div class="gvs-unit-features">
-                        <div class="gvs-unit-feature-item"><i class="ph ph-bed"></i><div class="gvs-unit-feature-text"><?php echo (int)$property['bedrooms']; ?> Bedrooms</div></div>
-                        <div class="gvs-unit-feature-item"><i class="ph ph-users"></i><div class="gvs-unit-feature-text"><?php echo (int)$property['accommodates']; ?> Guests</div></div>
-                        <div class="gvs-unit-feature-item"><i class="ph ph-bathtub"></i><div class="gvs-unit-feature-text"><?php echo (float)$property['bathrooms']; ?> Bathrooms</div></div>
-                    </div>
-
-                    <?php if (!empty($property['raw_amenities'])): ?>
-                    <div class="gvs-unit-divider"></div>
-                    <h3 class="gvs-unit-section-title">Amenities</h3>
-                    <div class="gvs-expandable-grid" id="gvs-am-content">
-                        <?php 
-                        foreach ($property['raw_amenities'] as $am) {
-                            $icon_class = !empty($custom_icons[$am]) ? $custom_icons[$am] : ($api_engine ? $api_engine->get_default_icon_class_for_amenity($am) : 'ph-star');
-                            echo '<div class="gvs-unit-am-item"><i class="ph ' . esc_attr($icon_class) . '"></i> ' . esc_html($am) . '</div>';
+                    // 1. DESCRIPTION & CHECK-IN TIMES
+                    if (($show_desc && !empty($property['description'])) || $show_times) {
+                        if ($show_desc && !empty($property['description'])) {
+                            echo '<h3 class="gvs-unit-section-title" style="margin-top: 20px;">Description</h3>';
+                            echo '<div class="gvs-expandable-text" id="gvs-desc-content">' . esc_html($property['description']) . '</div>';
+                            echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-desc-content\', this)">Show all</button>';
                         }
-                        ?>
-                    </div>
-                    <?php if (count($property['raw_amenities']) > 6): ?>
-                        <button class="gvs-show-all-btn" onclick="toggleExpand('gvs-am-content', this)">Show all</button>
-                    <?php endif; ?>
-                    <?php endif; ?>
 
-                    <?php if ($show_map && !empty($property['city']) && !empty($property['country'])): ?>
-                        <div class="gvs-unit-divider"></div>
+                        if ($show_times) {
+                            $checkIn = isset($property['checkInTime']) ? esc_html($property['checkInTime']) : '04:00 PM';
+                            $checkOut = isset($property['checkOutTime']) ? esc_html($property['checkOutTime']) : '10:00 AM';
+                            echo '<div style="margin-top: 30px;">';
+                            echo '<h4 style="font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0;">Check in and out</h4>';
+                            echo '<div style="font-size: 15px; color: #475569; margin-bottom: 4px;">Check in: ' . $checkIn . '</div>';
+                            echo '<div style="font-size: 15px; color: #475569;">Check out: ' . $checkOut . '</div>';
+                            echo '</div>';
+                        }
+                        $needs_divider = true;
+                    }
+
+                    // 2. PROPERTY FEATURES (Beds, Baths, Guests, Type)
+                    if ($show_features) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        ?>
+                        <h3 class="gvs-unit-section-title">Property Features</h3>
+                        <div class="gvs-unit-features">
+                            <div class="gvs-unit-feature-item"><i class="ph ph-users"></i><div class="gvs-unit-feature-text"><?php echo (int)$property['accommodates']; ?> Guests</div></div>
+                            <div class="gvs-unit-feature-item"><i class="ph ph-bed"></i><div class="gvs-unit-feature-text"><?php echo (int)$property['bedrooms']; ?> Bedrooms</div></div>
+                            <?php if ($show_beds && $total_beds > 0): ?>
+                                <div class="gvs-unit-feature-item"><i class="ph ph-bed"></i><div class="gvs-unit-feature-text"><?php echo (int)$total_beds; ?> Beds</div></div>
+                            <?php endif; ?>
+                            <div class="gvs-unit-feature-item"><i class="ph ph-bathtub"></i><div class="gvs-unit-feature-text"><?php echo (float)$property['bathrooms']; ?> Bathrooms</div></div>
+                            <?php if ($show_property_type && !empty($property['type'])): ?>
+                                <div class="gvs-unit-feature-item"><i class="ph ph-house"></i><div class="gvs-unit-feature-text"><?php echo esc_html($property['type']); ?></div></div>
+                            <?php endif; ?>
+                        </div>
+                        <?php
+                        $needs_divider = true;
+                    }
+
+                    // 3. BOOKING POLICIES (Min/Max Nights & Cancellation)
+                    if (($show_min_max_nights && ($minNights || $maxNights)) || ($show_cancel_policy && !empty($cancellation))) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Booking Policies</h3>';
+                        
+                        if ($show_min_max_nights && ($minNights || $maxNights)) {
+                            echo '<div style="margin-bottom: 15px;">';
+                            if ($minNights) echo '<div style="font-size: 15px; color: #475569; margin-bottom: 4px;"><strong>Minimum Stay:</strong> ' . esc_html($minNights) . ' nights</div>';
+                            if ($maxNights) echo '<div style="font-size: 15px; color: #475569;"><strong>Maximum Stay:</strong> ' . esc_html($maxNights) . ' nights</div>';
+                            echo '</div>';
+                        }
+                        
+                        if ($show_cancel_policy && !empty($cancellation)) {
+                            echo '<div style="font-size: 15px; color: #475569;"><strong>Cancellation Policy:</strong><br>';
+                            echo '<div class="gvs-expandable-text" id="gvs-cancellation-content">' . esc_html($cancellation) . '</div>';
+                            echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-cancellation-content\', this)">Show all</button>';
+                            echo '</div>';
+                        }
+                        $needs_divider = true;
+                    }
+
+                    // 4. THE SPACE
+                    if ($show_space && !empty($public_desc['space'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">The Space</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-space-content">' . esc_html($public_desc['space']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-space-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 5. GUEST ACCESS
+                    if ($show_access && !empty($public_desc['access'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Guest Access</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-access-content">' . esc_html($public_desc['access']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-access-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 6. INTERACTION WITH GUESTS
+                    if ($show_interaction && !empty($public_desc['interaction'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Interaction with Guests</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-interaction-content">' . esc_html($public_desc['interaction']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-interaction-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 7. OTHER NOTES
+                    if ($show_notes && !empty($public_desc['notes'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Other Notes</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-notes-content">' . esc_html($public_desc['notes']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-notes-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 8. HOUSE RULES
+                    if ($show_house_rules && !empty($public_desc['houseRules'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">House Rules</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-rules-content">' . esc_html($public_desc['houseRules']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-rules-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 9. AMENITIES
+                    if ($show_amenities && !empty($property['raw_amenities'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        ?>
+                        <h3 class="gvs-unit-section-title">Amenities</h3>
+                        <div class="gvs-expandable-grid" id="gvs-am-content">
+                            <?php 
+                            foreach ($property['raw_amenities'] as $am) {
+                                $icon_class = !empty($custom_icons[$am]) ? $custom_icons[$am] : ($api_engine ? $api_engine->get_default_icon_class_for_amenity($am) : 'ph-star');
+                                echo '<div class="gvs-unit-am-item"><i class="ph ' . esc_attr($icon_class) . '"></i> ' . esc_html($am) . '</div>';
+                            }
+                            ?>
+                        </div>
+                        <?php if (count($property['raw_amenities']) > 6): ?>
+                            <button class="gvs-show-all-btn" onclick="toggleExpand('gvs-am-content', this)">Show all</button>
+                        <?php endif; ?>
+                        <?php
+                        $needs_divider = true;
+                    }
+                    
+                    // 10. CUSTOM FIELDS
+                    if ($show_custom_fields && !empty($custom_fields) && is_array($custom_fields)) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Additional Details</h3>';
+                        echo '<div class="gvs-custom-fields-grid">';
+                        foreach($custom_fields as $cf) {
+                            $name = $cf['name'] ?? ($cf['title'] ?? 'Detail');
+                            $val = $cf['value'] ?? '';
+                            if (empty($val) || is_array($val)) continue;
+                            echo '<div class="gvs-cf-item"><strong>' . esc_html($name) . ':</strong> ' . esc_html($val) . '</div>';
+                        }
+                        echo '</div>';
+                        $needs_divider = true;
+                    }
+
+                    // 11. NEIGHBORHOOD
+                    if ($show_neighborhood && !empty($public_desc['neighborhood'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Neighborhood</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-neighborhood-content">' . esc_html($public_desc['neighborhood']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-neighborhood-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 12. TRANSIT
+                    if ($show_transit && !empty($public_desc['transit'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Transit</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-transit-content">' . esc_html($public_desc['transit']) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-transit-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+                    
+                    // 13. DIRECTIONS
+                    if ($show_directions && !empty($directions)) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        echo '<h3 class="gvs-unit-section-title">Directions</h3>';
+                        echo '<div class="gvs-expandable-text" id="gvs-directions-content">' . esc_html($directions) . '</div>';
+                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-directions-content\', this)">Show all</button>';
+                        $needs_divider = true;
+                    }
+
+                    // 14. MAP
+                    if ($show_map && !empty($property['city']) && !empty($property['country'])) {
+                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
+                        ?>
                         <h3 class="gvs-unit-section-title">Location</h3>
                         <div class="gvs-unit-map-wrapper">
                             <iframe width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="https://maps.google.com/maps?q=<?php echo urlencode(trim($property['city']) . ', ' . trim($property['country'])); ?>&t=&z=13&ie=UTF8&iwloc=&output=embed"></iframe>
                         </div>
-                    <?php endif; ?>
+                        <?php
+                    }
+                    ?>
                 </div>
 
                 <div class="gvs-unit-sidebar">
