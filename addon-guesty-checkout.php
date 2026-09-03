@@ -153,7 +153,7 @@ class Guesty_ALC_Checkout_System {
         $lname = sanitize_text_field($_POST['last_name'] ?? '');
         $email = sanitize_email($_POST['email'] ?? '');
         $phone = sanitize_text_field($_POST['phone'] ?? '');
-        $message = sanitize_textarea_field($_POST['message'] ?? ''); // Intercept the message
+        $message = sanitize_textarea_field($_POST['message'] ?? ''); 
 
         // Strict Server-Side Validation
         if (empty($fname) || empty($lname) || empty($email) || empty($phone)) {
@@ -165,11 +165,19 @@ class Guesty_ALC_Checkout_System {
 
         $mode = get_option('guesty_checkout_mode', 'inquiry');
 
+        // Formulate Strict ISO 8601 Timestamps for Guesty (Assuming standard checkin 15:00 / checkout 11:00)
+        $check_in_iso = $check_in . 'T15:00:00.000Z';
+        $check_out_iso = $check_out . 'T11:00:00.000Z';
+        $check_in_loc = $check_in . 'T15:00:00';
+        $check_out_loc = $check_out . 'T11:00:00';
+
         // Prepare Reservation Payload
         $payload = [
             'listingId' => $unit_id,
-            'checkInDate' => $check_in,
-            'checkOutDate' => $check_out,
+            'checkInDate' => $check_in_iso,
+            'checkOutDate' => $check_out_iso,
+            'checkInDateLocalized' => $check_in_loc,
+            'checkOutDateLocalized' => $check_out_loc,
             'guestsCount' => $guests,
             'status' => $mode, 
             'source' => 'website',
@@ -181,9 +189,11 @@ class Guesty_ALC_Checkout_System {
             ]
         ];
 
-        // Attach message to the Guesty Reservation 'notes' field so managers can see it
+        // Attach message to the Guesty Reservation 'notes' object (Strictly enforced Object/Array format)
         if (!empty($message)) {
-            $payload['notes'] = "Message from Website Guest:\n" . $message;
+            $payload['notes'] = [
+                'guest' => "Message from Website Guest:\n" . $message
+            ];
         }
 
         if (!empty($coupon)) {
@@ -453,13 +463,14 @@ class Guesty_ALC_Checkout_System {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
 
-                // 1. Fetch Dynamic Quote
+                // 1. Fetch Dynamic Quote securely on load to prevent URL tampering
                 const formData = new URLSearchParams();
                 formData.append('action', 'guesty_get_unit_quote');
                 formData.append('nonce', '<?php echo wp_create_nonce("guesty_unit_ajax_nonce"); ?>');
                 formData.append('unit_id', unitId);
-                formData.append('check_in', checkIn);
-                formData.append('check_out', checkOut);
+                // Send Full ISO format just like the payload
+                formData.append('check_in', checkIn + 'T15:00:00.000Z');
+                formData.append('check_out', checkOut + 'T11:00:00.000Z');
                 formData.append('guests', guests);
                 if (coupon) formData.append('coupon', coupon);
 
