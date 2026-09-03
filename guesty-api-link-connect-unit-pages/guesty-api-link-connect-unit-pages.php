@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Guesty API Link Connect - Unit Pages
  * Description: Add-on for Guesty API Link Connect. Automatically generates dedicated, SEO-friendly landing pages with real-time calendar validation for each imported unit.
- * Version: 4.22.0
+ * Version: 4.35.0
  * Author: Christopher E
  */
 
@@ -234,9 +234,11 @@ class Guesty_ALC_Unit_Pages {
                 { selector: '.gvs-unit-title', desc: 'The main H1 property title.' },
                 { selector: '.gvs-unit-description-group', desc: 'The wrapper holding all extended text details (Space, Access, Notes, etc).' },
                 { selector: '.gvs-unit-features', desc: 'The horizontal wrapper containing Bedrooms, Guests, Bathrooms.' },
-                { selector: '.gvs-expandable-grid', desc: 'The grid container holding all the amenities.' },
+                { selector: '.gvs-expandable-wrapper', desc: 'The animated container holding the entire amenities grid.' },
+                { selector: '.gvs-amenities-masonry', desc: 'The multi-column layout container holding the categorized amenities grids.' },
                 { selector: '.gvs-custom-fields-grid', desc: 'The grid holding custom field data elements.' },
-                { selector: '#gvs-inline-calendar-container', desc: 'The wrapper around the full 6-month availability calendar.' },
+                { selector: '.gvs-unit-full-width', desc: 'The full-width container below the sidebar holding the Calendar and Map.' },
+                { selector: '.gvs-cal-group', desc: 'The wrappers for the individual 3-month calendar instances.' },
                 { selector: '.gvs-booking-widget', desc: 'The sticky booking form contained in the right sidebar.' },
                 { selector: '.gvs-bw-btn', desc: 'The main "Book" button in the widget.' },
                 { selector: '.gvs-quote-grid', desc: 'The 4-column breakdown grid (Check In, Out, Nights, Guests).' },
@@ -323,7 +325,7 @@ class Guesty_ALC_Unit_Pages {
 
         if (is_wp_error($response) || wp_remote_retrieve_response_code($response) != 200) return false;
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
+        $body = json_decode($body_raw, true);
         if (is_array($body) && isset($body['access_token'])) {
             set_transient('guesty_access_token', $body['access_token'], 23 * HOUR_IN_SECONDS);
             return $body['access_token'];
@@ -602,7 +604,11 @@ class Guesty_ALC_Unit_Pages {
             } else {
                 $err_msg = is_array($data) ? ($data['message'] ?? ($data['error'] ?? '')) : (is_string($data) ? $data : $body_raw);
                 if (!empty($err_msg)) {
-                    wp_send_json_error(['message' => "Notice: " . $err_msg]);
+                    if (stripos($err_msg, 'minimum') !== false) {
+                        wp_send_json_error(['message' => "This property has a minimum night requirement for these dates."]);
+                    } else {
+                        wp_send_json_error(['message' => "Notice: " . $err_msg]);
+                    }
                     return;
                 }
             }
@@ -616,7 +622,7 @@ class Guesty_ALC_Unit_Pages {
         ]);
 
         if (!is_wp_error($res_cal) && wp_remote_retrieve_response_code($res_cal) == 200) {
-            $data = json_decode(wp_remote_retrieve_body($res_cal), true);
+            $data = json_decode($body_raw, true);
             $days = $data['days'] ?? ($data['data']['days'] ?? ($data['results'] ?? []));
             if (is_array($days)) {
                 $subtotal = 0;
@@ -647,7 +653,7 @@ class Guesty_ALC_Unit_Pages {
         if (empty($unit_id)) wp_send_json_error(['message' => 'Missing Unit ID']);
 
         // Cache calendar blocks for 15 minutes to eliminate Guesty 429 rate limits
-        $cache_key = 'guesty_cal_blocked_' . md5($unit_id);
+        $cache_key = 'guesty_cal_blocked_v3_' . md5($unit_id);
         $cached_blocks = get_transient($cache_key);
         if (false !== $cached_blocks) {
             wp_send_json_success(['blocked_dates' => $cached_blocks]);
@@ -658,6 +664,38 @@ class Guesty_ALC_Unit_Pages {
         if (!$token) wp_send_json_error(['message' => 'Invalid API credentials.']);
 
         $blocked_dates = [];
+        
+        // 1. Direct Reservations Check (Faster & safely omits the checkout day)
+        $url_res = "https://open-api.guesty.com/v1/reservations?listingId={$unit_id}&limit=100";
+        $res_reservations = wp_remote_get($url_res, [
+            'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json' ],
+            'timeout' => 15
+        ]);
+
+        if (!is_wp_error($res_reservations) && wp_remote_retrieve_response_code($res_reservations) == 200) {
+            $body = json_decode(wp_remote_retrieve_body($res_reservations), true);
+            $items = $body['results'] ?? ($body['data'] ?? []);
+            foreach ($items as $item) {
+                $status = strtolower($item['status'] ?? '');
+                if (in_array($status, ['canceled', 'declined', 'available'])) continue;
+                $start = $item['checkIn'] ?? ($item['startDate'] ?? '');
+                $end = $item['checkOut'] ?? ($item['endDate'] ?? '');
+                
+                if (!empty($start) && !empty($end)) {
+                    try {
+                        $start_dt = new DateTime(date('Y-m-d', strtotime($start)));
+                        $end_dt = new DateTime(date('Y-m-d', strtotime($end)));
+                        if ($start_dt < $end_dt) {
+                            // DatePeriod natively excludes the end date, perfectly allowing back-to-back bookings
+                            $period = new DatePeriod($start_dt, new DateInterval('P1D'), $end_dt);
+                            foreach ($period as $dt) $blocked_dates[] = $dt->format('Y-m-d');
+                        }
+                    } catch (Exception $e) {}
+                }
+            }
+        }
+
+        // 2. Full Calendar Check (For owner blocks, maintenance, etc.)
         $ranges = [
             ['start' => date('Y-m-d'), 'end' => date('Y-m-d', strtotime('+180 days'))],
             ['start' => date('Y-m-d', strtotime('+181 days')), 'end' => date('Y-m-d', strtotime('+360 days'))]
@@ -677,12 +715,16 @@ class Guesty_ALC_Unit_Pages {
                     foreach ($days as $day) {
                         if (!is_array($day)) continue;
                         $is_blocked = false;
-                        $status = isset($day['status']) ? strtolower($day['status']) : '';
-                        if ($status !== '' && $status !== 'available') $is_blocked = true;
-                        elseif (isset($day['blocks']) && is_array($day['blocks'])) {
-                            foreach ($day['blocks'] as $block_active) { if ($block_active === true) { $is_blocked = true; break; } }
-                        } elseif (!empty($day['reservation'])) $is_blocked = true;
-                        elseif (isset($day['isAvailable']) && $day['isAvailable'] === false) $is_blocked = true;
+                        
+                        // We do NOT block simply if status is unavailable, because that might be a reservation checkout day.
+                        // We strictly look for explicitly defined owner blocks.
+                        if (isset($day['blocks']) && is_array($day['blocks'])) {
+                            foreach ($day['blocks'] as $block_active) { 
+                                if ($block_active === true) { $is_blocked = true; break; } 
+                            }
+                        } elseif (isset($day['isAvailable']) && $day['isAvailable'] === false) {
+                            $is_blocked = true;
+                        }
 
                         if ($is_blocked && !empty($day['date'])) {
                             $date_parts = explode('T', $day['date']);
@@ -808,16 +850,91 @@ class Guesty_ALC_Unit_Pages {
         $minNights = $terms['minNights'] ?? '';
         $maxNights = $terms['maxNights'] ?? '';
 
-        // Extract Turnday logic
+        // Extract Turnday logic safely checking varying API formats
         $turnday_val = '';
-        if (!empty($custom_fields) && is_array($custom_fields)) {
-            foreach ($custom_fields as $cf) {
-                $name = strtolower($cf['name'] ?? ($cf['title'] ?? ''));
-                if ($name === 'turnday' || $name === 'turn day') {
-                    $turnday_val = ucfirst(strtolower($cf['value'] ?? ''));
-                    break;
+        if (!empty($custom_fields)) {
+            if (is_array($custom_fields)) {
+                foreach ($custom_fields as $k => $v) {
+                    if (is_array($v)) {
+                        $name = strtolower(trim($v['name'] ?? ($v['title'] ?? '')));
+                        $val = trim($v['value'] ?? '');
+                    } else {
+                        $name = strtolower(trim((string)$k));
+                        $val = trim((string)$v);
+                    }
+                    
+                    if (strpos($name, 'turn') !== false || strpos($name, 'check-in day') !== false || strpos($name, 'checkin day') !== false || strpos($name, 'changeover') !== false) {
+                        $turnday_val = ucfirst(strtolower($val));
+                        break;
+                    }
                 }
             }
+        }
+
+        // Amenities Categorization Engine
+        $amenity_groups = [
+            'Bathroom' => [],
+            'Bedroom & Laundry' => [],
+            'Entertainment' => [],
+            'Family' => [],
+            'Heating & Cooling' => [],
+            'Internet & Office' => [],
+            'Kitchen & Dining' => [],
+            'Location Features' => [],
+            'Outdoor' => [],
+            'Parking & Facilities' => [],
+            'Safety & Home' => [],
+            'General' => []
+        ];
+        
+        $category_keywords = [
+            'Bathroom' => ['bath', 'tub', 'shower', 'shampoo', 'soap', 'conditioner', 'body wash', 'hot water', 'toilet'],
+            'Bedroom & Laundry' => ['washer', 'dry', 'laundry', 'bed', 'linen', 'pillow', 'blanket', 'iron', 'hanger', 'clothing', 'closet', 'wardrobe', 'safe'],
+            'Entertainment' => ['tv', 'television', 'cable', 'netflix', 'game', 'dice', 'ping pong', 'pool table', 'book', 'read', 'dvd', 'console', 'music', 'sound', 'speaker', 'bluetooth', 'movie'],
+            'Family' => ['crib', 'cot', 'baby', 'child', 'high chair', 'kid', 'infant', 'pack n play', 'pack ’n play', 'playpen'],
+            'Heating & Cooling' => ['air condition', 'ac', 'heat', 'warm', 'fan', 'climate', 'fireplace', 'fire place'],
+            'Internet & Office' => ['wifi', 'internet', 'web', 'desk', 'office', 'workspace', 'laptop', 'ethernet'],
+            'Kitchen & Dining' => ['kitchen', 'cook', 'oven', 'stove', 'microwave', 'fridge', 'refrigerator', 'freezer', 'ice', 'coffee', 'keurig', 'espresso', 'dish', 'toaster', 'blender', 'kettle', 'bbq', 'grill', 'barbeque', 'bake', 'dining', 'wine', 'silverware', 'pans', 'pots'],
+            'Location Features' => ['beach', 'lake', 'ocean', 'river', 'sea', 'water', 'boat', 'dock', 'kayak', 'canoe', 'view', 'resort', 'ski'],
+            'Outdoor' => ['patio', 'balcony', 'deck', 'terrace', 'yard', 'garden', 'outdoor', 'fire pit', 'campfire', 'hammock', 'furniture'],
+            'Parking & Facilities' => ['park', 'garage', 'driveway', 'gym', 'fit', 'pool', 'swim', 'hot tub', 'jacuzzi', 'sauna'],
+            'Safety & Home' => ['carbon', 'smoke', 'detector', 'alarm', 'fire extinguisher', 'first aid', 'emergency', 'security', 'entrance', 'camera']
+        ];
+
+        // Filter out property rules that Guesty incorrectly lumps into the Amenities array
+        $excluded_amenities = [
+            'pets allowed',
+            'smoking allowed',
+            'events allowed',
+            'long term stays allowed'
+        ];
+
+        if (!empty($property['raw_amenities'])) {
+            foreach ($property['raw_amenities'] as $am) {
+                $am_lower = strtolower(trim($am));
+                
+                // Aggressive block for suitability policies
+                if (in_array($am_lower, $excluded_amenities) || 
+                    strpos($am_lower, 'suitable for children') !== false || 
+                    strpos($am_lower, 'suitable for infants') !== false) {
+                    continue;
+                }
+
+                $assigned = false;
+                foreach ($category_keywords as $cat => $keywords) {
+                    foreach ($keywords as $kw) {
+                        if (strpos($am_lower, $kw) !== false) {
+                            $amenity_groups[$cat][] = $am;
+                            $assigned = true;
+                            break 2;
+                        }
+                    }
+                }
+                if (!$assigned) {
+                    $amenity_groups['General'][] = $am;
+                }
+            }
+            $amenity_groups = array_filter($amenity_groups);
         }
 
         $checkout_base_url = get_option('guesty_unit_checkout_url', get_option('guesty_base_url', ''));
@@ -842,15 +959,23 @@ class Guesty_ALC_Unit_Pages {
 
         <style>
             .ast-archive-entry-banner, .ast-breadcrumbs-wrapper, .page-header { display: none !important; }
-            body, .site-content, #content, .ast-container { background-color: <?php echo esc_attr($bg_color); ?> !important; }
-            @media (min-width: 922px) { .ast-container { max-width: 100% !important; } }
+            
+            /* Protect the Astra Masthead (Header) from being stretched */
+            .site-content, #content { background-color: <?php echo esc_attr($bg_color); ?> !important; }
+            @media (min-width: 922px) { 
+                div#content .ast-container, 
+                .site-content > .ast-container { max-width: 100% !important; padding: 0 !important; background-color: <?php echo esc_attr($bg_color); ?> !important; } 
+            }
 
-            /* Grid Fixes & Wrapper Constraints */
-            .gvs-unit-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1200px; margin: 40px auto; padding: 0 20px; color: #1d2327; overflow: hidden; box-sizing: border-box; }
+            /* Structural Constraints */
+            .gvs-unit-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1240px; margin: 40px auto; padding: 0 20px; color: #1d2327; overflow: hidden; box-sizing: border-box; }
             .gvs-unit-slider-wrapper { margin-bottom: 40px; min-width: 0; width: 100%; overflow: hidden; }
-            .gvs-unit-content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 60px; }
-            .gvs-unit-main { min-width: 0; overflow: hidden; } /* Prevents Swiper & Calendar blow-outs */
-            @media(max-width: 900px) { .gvs-unit-content-grid { grid-template-columns: 1fr; gap: 40px; } }
+            
+            /* Expanded sidebar width to 420px */
+            .gvs-unit-content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 60px; align-items: start; }
+            .gvs-unit-main { min-width: 0; max-width: 100%; overflow: hidden; } 
+            .gvs-unit-sidebar { min-width: 0; max-width: 100%; }
+            @media(max-width: 950px) { .gvs-unit-content-grid { grid-template-columns: 1fr; gap: 40px; } }
 
             .swiper-main { width: 100%; height: 500px; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
             .swiper-main img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
@@ -882,14 +1007,24 @@ class Guesty_ALC_Unit_Pages {
 
             .gvs-expandable-text { font-size: 16px; line-height: 1.6; color: #475569; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; word-wrap: break-word; }
             .gvs-expandable-text.expanded { -webkit-line-clamp: initial; display: block; }
-            .gvs-expandable-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; max-height: 140px; overflow: hidden; }
-            .gvs-expandable-grid.expanded { max-height: 2000px; }
+            
+            .gvs-expandable-wrapper { max-height: 350px; overflow: hidden; transition: max-height 0.5s ease; position: relative; }
+            .gvs-expandable-wrapper.expanded { max-height: 5000px; }
+            
             .gvs-show-all-btn { background: transparent; color: <?php echo esc_attr($btn_color); ?>; border: none; font-weight: 600; font-size: 15px; cursor: pointer; padding: 0; margin-top: 15px; display: inline-flex; align-items: center; gap: 4px; }
 
             .gvs-unit-features { display: flex; flex-wrap: wrap; gap: 30px; margin-bottom: 30px; }
             .gvs-unit-feature-item { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
             .gvs-unit-feature-item i { font-size: 28px; color: #475569; }
             .gvs-unit-feature-text { font-size: 15px; font-weight: 500; color: #0f172a; }
+            
+            /* Masonry Layout for Amenities */
+            .gvs-amenities-masonry { column-count: 3; column-gap: 40px; margin-top: 15px; }
+            .gvs-amenity-group-wrapper { break-inside: avoid-column; margin-bottom: 30px; }
+            .gvs-amenity-group-items { display: flex; flex-direction: column; gap: 12px; }
+            @media(max-width: 900px) { .gvs-amenities-masonry { column-count: 2; } }
+            @media(max-width: 600px) { .gvs-amenities-masonry { column-count: 1; } }
+            
             .gvs-unit-am-item { display: flex; align-items: center; gap: 12px; font-size: 15px; color: #334155; }
             .gvs-unit-am-item i { font-size: 24px; color: #64748b; }
             
@@ -897,7 +1032,9 @@ class Guesty_ALC_Unit_Pages {
             .gvs-cf-item strong { color: #0f172a; font-weight: 600; }
             @media(max-width: 600px) { .gvs-custom-fields-grid { grid-template-columns: 1fr; } }
             
-            .gvs-unit-map-wrapper { width: 100%; height: 350px; border-radius: 12px; overflow: hidden; margin-top: 15px; border: 1px solid #e2e8f0; }
+            /* Full Width Sections below grid */
+            .gvs-unit-full-width { width: 100%; max-width: 100%; margin-top: 40px; }
+            .gvs-unit-map-wrapper { width: 100%; height: 400px; border-radius: 12px; overflow: hidden; margin-top: 15px; border: 1px solid #e2e8f0; }
 
             .gvs-booking-widget { position: sticky; top: 100px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
             .gvs-bw-input-wrap { border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
@@ -933,44 +1070,127 @@ class Guesty_ALC_Unit_Pages {
             .gvs-bw-btn { width: 100%; background: <?php echo esc_attr($btn_color); ?>; color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
             .gvs-bw-error { display: none; color: #dc2626; font-size: 13px; margin-bottom: 12px; text-align: center; font-weight: 500; }
 
-            /* Full Width Inline Calendar CSS with Strict Overrides */
-            #gvs-inline-calendar-container { margin-bottom: 15px; margin-top: 20px; width: 100%; }
-            #gvs-inline-calendar-container .flatpickr-calendar.inline { width: 100% !important; border: none !important; box-shadow: none !important; padding: 0 !important; background: transparent !important; }
-            #gvs-inline-calendar-container .flatpickr-innerContainer { display: block !important; width: 100% !important; overflow: hidden !important; }
-            #gvs-inline-calendar-container .flatpickr-rContainer { width: 100% !important; }
+            /* Universal Calendar Reset & Variables */
+            .flatpickr-calendar { font-family: inherit !important; border-radius: 12px !important; box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important; border: 1px solid #e2e8f0 !important; background: #fff !important; box-sizing: border-box !important; }
+            .flatpickr-calendar:not(.inline) { width: max-content !important; padding: 24px 45px !important; }
             
-            #gvs-inline-calendar-container .flatpickr-months { width: 100% !important; display: flex !important; flex-wrap: wrap !important; margin-bottom: 10px !important; }
-            #gvs-inline-calendar-container .flatpickr-weekdays { width: 100% !important; display: flex !important; flex-wrap: wrap !important; }
-            #gvs-inline-calendar-container .flatpickr-days { width: 100% !important; display: flex !important; flex-wrap: wrap !important; border: none !important; }
-            
-            #gvs-inline-calendar-container .flatpickr-month { width: calc(100% / 3) !important; flex: 0 0 calc(100% / 3) !important; max-width: calc(100% / 3) !important; }
-            #gvs-inline-calendar-container .flatpickr-weekdaycontainer { width: calc(100% / 3) !important; flex: 0 0 calc(100% / 3) !important; max-width: calc(100% / 3) !important; padding: 0 10px !important; box-sizing: border-box !important;}
-            #gvs-inline-calendar-container .dayContainer { width: calc(100% / 3) !important; flex: 0 0 calc(100% / 3) !important; max-width: calc(100% / 3) !important; min-width: 0 !important; box-sizing: border-box !important; padding: 0 10px !important; margin-bottom: 20px !important; justify-content: center !important; }
-            
-            @media (max-width: 900px) {
-                #gvs-inline-calendar-container .flatpickr-month,
-                #gvs-inline-calendar-container .flatpickr-weekdaycontainer,
-                #gvs-inline-calendar-container .dayContainer { width: 50% !important; flex: 0 0 50% !important; max-width: 50% !important; }
-            }
-            @media (max-width: 600px) {
-                #gvs-inline-calendar-container .flatpickr-month,
-                #gvs-inline-calendar-container .flatpickr-weekdaycontainer,
-                #gvs-inline-calendar-container .dayContainer { width: 100% !important; flex: 0 0 100% !important; max-width: 100% !important; }
-            }
+            .flatpickr-innerContainer, .flatpickr-rContainer { box-sizing: border-box !important; }
+            .flatpickr-calendar:not(.inline) .flatpickr-innerContainer, 
+            .flatpickr-calendar:not(.inline) .flatpickr-rContainer { width: max-content !important; overflow: visible !important; }
 
-            #gvs-inline-calendar-container .flatpickr-day { border-radius: 0 !important; border: 1px solid #e2e8f0 !important; max-width: 100% !important; margin: 0 !important; height: 36px !important; line-height: 36px !important; margin-top: 1px !important; color: #1d2327 !important; background: <?php echo esc_attr($cal_avail); ?> !important; }
-            #gvs-inline-calendar-container .flatpickr-day.flatpickr-disabled { background: <?php echo esc_attr($cal_unavail); ?> !important; color: #fff !important; border-color: <?php echo esc_attr($cal_unavail); ?> !important; text-decoration: none !important; }
-            #gvs-inline-calendar-container .flatpickr-day.gvs-turnday-cell { border: 2px solid <?php echo esc_attr($cal_turnday); ?> !important; color: <?php echo esc_attr($cal_turnday); ?> !important; font-weight: 700; z-index: 2; }
-            #gvs-inline-calendar-container .flatpickr-day.flatpickr-disabled.gvs-turnday-cell { border: 2px solid <?php echo esc_attr($cal_turnday); ?> !important; color: #fff !important; }
+            .flatpickr-months { margin-bottom: 20px !important; position: relative !important; display: flex !important; gap: 24px !important; align-items: center !important; justify-content: center !important; }
+            .flatpickr-month { width: 290px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
+            .flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { border: 1px solid #cbd5e1 !important; border-radius: 6px !important; height: 32px !important; width: 32px !important; top: 50% !important; transform: translateY(-50%) !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 0 !important; color: #475569 !important; fill: #475569 !important; position: absolute !important; z-index: 10; cursor: pointer !important; }
+            .flatpickr-months .flatpickr-prev-month:hover, .flatpickr-months .flatpickr-next-month:hover { background: #f8fafc !important; }
+            .flatpickr-months .flatpickr-prev-month { left: 10px !important; } 
+            .flatpickr-months .flatpickr-next-month { right: 10px !important; }
+            
+            /* Lock Month/Year Dropdowns Globally */
+            .flatpickr-current-month { pointer-events: none !important; font-size: 15px !important; font-weight: 600 !important; color: #1e293b !important; position: static !important; width: auto !important; padding: 0 !important; height: auto !important; display: inline-block !important; }
+            .flatpickr-monthDropdown-months { appearance: none !important; -webkit-appearance: none !important; -moz-appearance: none !important; background: transparent !important; border: none !important; color: #0f172a !important; font-weight: 700 !important; pointer-events: none !important; }
+            .numInputWrapper span.arrowUp, .numInputWrapper span.arrowDown { display: none !important; }
+            
+            /* Universal Base Grid Formatting for Pop-up & Bottom Calendars */
+            .flatpickr-weekdays { display: flex !important; width: max-content !important; gap: 24px !important; }
+            .flatpickr-days { display: flex !important; width: max-content !important; border: none !important; gap: 24px !important; }
+            
+            .flatpickr-weekdaycontainer { display: grid !important; grid-template-columns: repeat(7, 38px) !important; width: 290px !important; min-width: 290px !important; max-width: 290px !important; padding: 0 !important; gap: 4px !important; justify-content: stretch !important; margin-bottom: 8px !important; box-sizing: border-box !important; }
+            .flatpickr-weekday { color: #64748b !important; font-weight: 600 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; flex: none !important; margin: 0 !important; }
+            .dayContainer { width: 290px !important; min-width: 290px !important; max-width: 290px !important; display: grid !important; grid-template-columns: repeat(7, 38px) !important; gap: 4px !important; box-shadow: none !important; padding: 0 !important; justify-content: stretch !important; box-sizing: border-box !important; }
+            
+            /* Global Day Cell Styles */
+            .flatpickr-day { 
+                width: 38px !important; max-width: 38px !important; height: 38px !important; min-height: 38px !important;
+                border-radius: 3px !important; border: 1px solid #1d2327 !important; margin: 0 !important; box-sizing: border-box !important; 
+                display: flex !important; align-items: center !important; justify-content: center !important; 
+                color: #1d2327 !important; background: <?php echo esc_attr($cal_avail); ?> !important; font-weight: 500 !important;
+            }
+            
+            .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange, .flatpickr-day.selected.inRange, .flatpickr-day.startRange.inRange, .flatpickr-day.endRange.inRange { background: var(--gvs-btn-color, <?php echo esc_attr($btn_color); ?>) !important; border-color: var(--gvs-btn-color, <?php echo esc_attr($btn_color); ?>) !important; color: #fff !important; box-shadow: none !important; }
+            .flatpickr-day.inRange, .flatpickr-day.prevMonthDay.inRange, .flatpickr-day.nextMonthDay.inRange, .flatpickr-day.today.inRange { background: #f1f5f9 !important; border-color: #1d2327 !important; box-shadow: none !important; color: #1d2327 !important; }
+            .flatpickr-day:hover:not(.flatpickr-disabled) { background: #e2e8f0 !important; color: #1e293b !important; }
+            
+            /* Global Blocked Styles */
+            .flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { 
+                background: <?php echo esc_attr($cal_unavail); ?> !important; 
+                color: #fff !important; 
+                border-color: <?php echo esc_attr($cal_unavail); ?> !important; 
+                cursor: not-allowed !important; 
+                text-decoration: none !important; 
+            }
+            
+            /* Global Turnday Highlight Styles */
+            .flatpickr-day.gvs-turnday-cell { 
+                box-shadow: inset 0 0 0 2px <?php echo esc_attr($cal_turnday); ?> !important; color: <?php echo esc_attr($cal_turnday); ?> !important; font-weight: 700 !important; z-index: 2; border-color: <?php echo esc_attr($cal_turnday); ?> !important;
+            }
+            .flatpickr-day.flatpickr-disabled.gvs-turnday-cell { 
+                box-shadow: inset 0 0 0 2px <?php echo esc_attr($cal_turnday); ?> !important; color: #fff !important; border-color: <?php echo esc_attr($cal_turnday); ?> !important;
+            }
+            
+            /* Specific Gap Settings for Sidebar Pop-up vs Inline Calendars */
+            .flatpickr-calendar:not(.inline) { width: max-content !important; max-width: 95vw !important; min-width: 660px !important; white-space: nowrap !important; }
+            @media (max-width: 768px) {
+                .flatpickr-calendar:not(.inline) { min-width: 0 !important; width: auto !important; }
+            }
+            .flatpickr-calendar:not(.inline) .flatpickr-months,
+            .flatpickr-calendar:not(.inline) .flatpickr-weekdays,
+            .flatpickr-calendar:not(.inline) .flatpickr-days { gap: 40px !important; justify-content: center !important; }
+            
+            /* Advanced 2-Instance Inline Calendar CSS */
+            .gvs-cal-nav-row { display: flex; justify-content: space-between; align-items: center; width: 100%; position: relative; z-index: 10; margin-bottom: -35px; }
+            .gvs-custom-cal-btn { background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #475569; transition: background 0.2s; }
+            .gvs-custom-cal-btn:hover { background: #f8fafc; }
+            .gvs-custom-cal-btn i { font-size: 16px; font-weight: bold; }
+            
+            .gvs-calendars-wrapper { display: flex; flex-direction: column; width: 100%; max-width: 100%; margin-top: 20px; }
+            .gvs-cal-group { width: 100%; max-width: 100%; display: block; }
+            
+            /* Hide default arrows to prevent conflicts */
+            .gvs-cal-group .flatpickr-prev-month, .gvs-cal-group .flatpickr-next-month { display: none !important; }
+            
+            /* Flatten Flatpickr nested wrappers for full-width grid control */
+            .gvs-cal-group .flatpickr-calendar.inline { width: 100% !important; max-width: 100% !important; border: none !important; box-shadow: none !important; padding: 0 !important; background: transparent !important; }
+            .gvs-cal-group .flatpickr-innerContainer, .gvs-cal-group .flatpickr-rContainer { display: block !important; width: 100% !important; max-width: 100% !important; overflow: hidden !important; }
+            
+            /* Force inline grids to wrap correctly based on screen size */
+            .gvs-cal-group .flatpickr-months,
+            .gvs-cal-group .flatpickr-weekdays,
+            .gvs-cal-group .flatpickr-days {
+                display: grid !important;
+                grid-template-columns: repeat(1, 1fr) !important;
+                gap: 40px !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                border: none !important;
+            }
+            .gvs-cal-group .flatpickr-months { margin-bottom: 5px !important; }
+            
+            @media (min-width: 600px) {
+                .gvs-cal-group .flatpickr-months,
+                .gvs-cal-group .flatpickr-weekdays,
+                .gvs-cal-group .flatpickr-days { grid-template-columns: repeat(2, 1fr) !important; }
+            }
+            @media (min-width: 900px) {
+                .gvs-cal-group .flatpickr-months,
+                .gvs-cal-group .flatpickr-weekdays,
+                .gvs-cal-group .flatpickr-days { grid-template-columns: repeat(3, 1fr) !important; }
+            }
+            
+            /* Ensure children fill the grid cells */
+            .gvs-cal-group .flatpickr-month,
+            .gvs-cal-group .flatpickr-weekdaycontainer,
+            .gvs-cal-group .dayContainer {
+                width: 100% !important; max-width: 100% !important; min-width: 0 !important;
+                box-sizing: border-box !important; padding: 0 !important;
+            }
             
             .gvs-calendar-legend { display: flex; gap: 20px; justify-content: center; margin-top: 10px; font-size: 14px; font-weight: 600; color: #0f172a; flex-wrap: wrap; }
             .gvs-legend-item { display: flex; align-items: center; gap: 8px; }
             .gvs-legend-box { width: 16px; height: 16px; border-radius: 2px; }
-            .gvs-legend-box.available { background: <?php echo esc_attr($cal_avail); ?>; border: 1px solid #cbd5e1; }
-            .gvs-legend-box.unavailable { background: <?php echo esc_attr($cal_unavail); ?>; }
+            .gvs-legend-box.available { background: <?php echo esc_attr($cal_avail); ?>; border: 1px solid #1d2327; }
+            .gvs-legend-box.unavailable { background: <?php echo esc_attr($cal_unavail); ?>; border: 1px solid <?php echo esc_attr($cal_unavail); ?>; }
             .gvs-legend-box.turnday { border: 2px solid <?php echo esc_attr($cal_turnday); ?>; background: <?php echo esc_attr($cal_avail); ?>; }
 
-            .flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { color: #cbd5e1 !important; background: #f8fafc !important; cursor: not-allowed !important; text-decoration: line-through; }
             @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             <?php echo $unit_additional_css; ?>
         </style>
@@ -1014,47 +1234,47 @@ class Guesty_ALC_Unit_Pages {
                     if ($show_desc && !empty($property['description'])) {
                         echo '<h3 class="gvs-unit-section-title">Description</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-desc-content">' . esc_html($property['description']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-desc-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-desc-content" onclick="toggleExpand(\'gvs-desc-content\', this)">Show all</button>';
                     }
                     if ($show_space && !empty($public_desc['space'])) {
                         echo '<h3 class="gvs-unit-section-title">The Space</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-space-content">' . esc_html($public_desc['space']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-space-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-space-content" onclick="toggleExpand(\'gvs-space-content\', this)">Show all</button>';
                     }
                     if ($show_access && !empty($public_desc['access'])) {
                         echo '<h3 class="gvs-unit-section-title">Guest Access</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-access-content">' . esc_html($public_desc['access']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-access-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-access-content" onclick="toggleExpand(\'gvs-access-content\', this)">Show all</button>';
                     }
                     if ($show_interaction && !empty($public_desc['interaction'])) {
                         echo '<h3 class="gvs-unit-section-title">Interaction with Guests</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-interaction-content">' . esc_html($public_desc['interaction']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-interaction-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-interaction-content" onclick="toggleExpand(\'gvs-interaction-content\', this)">Show all</button>';
                     }
                     if ($show_notes && !empty($public_desc['notes'])) {
                         echo '<h3 class="gvs-unit-section-title">Other Notes</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-notes-content">' . esc_html($public_desc['notes']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-notes-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-notes-content" onclick="toggleExpand(\'gvs-notes-content\', this)">Show all</button>';
                     }
                     if ($show_neighborhood && !empty($public_desc['neighborhood'])) {
                         echo '<h3 class="gvs-unit-section-title">Neighborhood</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-neighborhood-content">' . esc_html($public_desc['neighborhood']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-neighborhood-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-neighborhood-content" onclick="toggleExpand(\'gvs-neighborhood-content\', this)">Show all</button>';
                     }
                     if ($show_transit && !empty($public_desc['transit'])) {
                         echo '<h3 class="gvs-unit-section-title">Transit</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-transit-content">' . esc_html($public_desc['transit']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-transit-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-transit-content" onclick="toggleExpand(\'gvs-transit-content\', this)">Show all</button>';
                     }
                     if ($show_directions && !empty($directions)) {
                         echo '<h3 class="gvs-unit-section-title">Directions</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-directions-content">' . esc_html($directions) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-directions-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-directions-content" onclick="toggleExpand(\'gvs-directions-content\', this)">Show all</button>';
                     }
                     if ($show_house_rules && !empty($public_desc['houseRules'])) {
                         echo '<h3 class="gvs-unit-section-title">House Rules</h3>';
                         echo '<div class="gvs-expandable-text" id="gvs-rules-content">' . esc_html($public_desc['houseRules']) . '</div>';
-                        echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-rules-content\', this)">Show all</button>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-rules-content" onclick="toggleExpand(\'gvs-rules-content\', this)">Show all</button>';
                     }
                     echo '</div>'; // End Description Group
                     
@@ -1107,29 +1327,36 @@ class Guesty_ALC_Unit_Pages {
                         if ($show_cancel_policy && !empty($cancellation)) {
                             echo '<div style="font-size: 15px; color: #475569;"><strong>Cancellation Policy:</strong><br>';
                             echo '<div class="gvs-expandable-text" id="gvs-cancellation-content">' . esc_html($cancellation) . '</div>';
-                            echo '<button class="gvs-show-all-btn" onclick="toggleExpand(\'gvs-cancellation-content\', this)">Show all</button>';
+                            echo '<button class="gvs-show-all-btn" data-target="gvs-cancellation-content" onclick="toggleExpand(\'gvs-cancellation-content\', this)">Show all</button>';
                             echo '</div>';
                         }
                         $needs_divider = true;
                     }
 
-                    // 5. AMENITIES
-                    if ($show_amenities && !empty($property['raw_amenities'])) {
+                    // 5. AMENITIES (Categorized Grid)
+                    if ($show_amenities && !empty($amenity_groups)) {
                         if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
-                        ?>
-                        <h3 class="gvs-unit-section-title">Amenities</h3>
-                        <div class="gvs-expandable-grid" id="gvs-am-content">
-                            <?php 
-                            foreach ($property['raw_amenities'] as $am) {
+                        echo '<h3 class="gvs-unit-section-title">Amenities</h3>';
+                        
+                        echo '<div class="gvs-expandable-wrapper" id="gvs-all-amenities-content">';
+                        echo '<div class="gvs-amenities-masonry">';
+                        
+                        foreach ($amenity_groups as $cat_name => $am_items) {
+                            echo '<div class="gvs-amenity-group-wrapper">';
+                            echo '<h4 style="font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 12px 0;">' . esc_html($cat_name) . '</h4>';
+                            echo '<div class="gvs-amenity-group-items">';
+                            foreach ($am_items as $am) {
                                 $icon_class = !empty($custom_icons[$am]) ? $custom_icons[$am] : ($api_engine ? $api_engine->get_default_icon_class_for_amenity($am) : 'ph-star');
                                 echo '<div class="gvs-unit-am-item"><i class="ph ' . esc_attr($icon_class) . '"></i> ' . esc_html($am) . '</div>';
                             }
-                            ?>
-                        </div>
-                        <?php if (count($property['raw_amenities']) > 6): ?>
-                            <button class="gvs-show-all-btn" onclick="toggleExpand('gvs-am-content', this)">Show all</button>
-                        <?php endif; ?>
-                        <?php
+                            echo '</div>';
+                            echo '</div>';
+                        }
+                        
+                        echo '</div>'; // End masonry
+                        echo '</div>'; // End expandable wrapper
+                        
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-all-amenities-content" onclick="toggleExpand(\'gvs-all-amenities-content\', this)">Show all</button>';
                         $needs_divider = true;
                     }
                     
@@ -1137,6 +1364,7 @@ class Guesty_ALC_Unit_Pages {
                     if ($show_custom_fields && !empty($custom_fields) && is_array($custom_fields)) {
                         if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
                         echo '<h3 class="gvs-unit-section-title">Additional Details</h3>';
+                        echo '<div class="gvs-expandable-wrapper" id="gvs-cf-grid-wrap">';
                         echo '<div class="gvs-custom-fields-grid">';
                         foreach($custom_fields as $cf) {
                             $name = $cf['name'] ?? ($cf['title'] ?? 'Detail');
@@ -1145,37 +1373,9 @@ class Guesty_ALC_Unit_Pages {
                             echo '<div class="gvs-cf-item"><strong>' . esc_html($name) . ':</strong> ' . esc_html($val) . '</div>';
                         }
                         echo '</div>';
+                        echo '</div>';
+                        echo '<button class="gvs-show-all-btn" data-target="gvs-cf-grid-wrap" onclick="toggleExpand(\'gvs-cf-grid-wrap\', this)">Show all</button>';
                         $needs_divider = true;
-                    }
-
-                    // 7. FULL AVAILABILITY CALENDAR
-                    if ($show_full_calendar) {
-                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
-                        ?>
-                        <h3 class="gvs-unit-section-title">Availability</h3>
-                        <div id="gvs-inline-calendar-container">
-                            <input type="text" id="gvs-inline-calendar-anchor" style="display:none;">
-                        </div>
-                        <div class="gvs-calendar-legend">
-                            <div class="gvs-legend-item"><span class="gvs-legend-box available"></span> Available</div>
-                            <div class="gvs-legend-item"><span class="gvs-legend-box unavailable"></span> Not Available</div>
-                            <?php if ($turnday_val): ?>
-                            <div class="gvs-legend-item"><span class="gvs-legend-box turnday"></span> <?php echo esc_html(substr($turnday_val, 0, 3) . ' - ' . substr($turnday_val, 0, 3)); ?></div>
-                            <?php endif; ?>
-                        </div>
-                        <?php
-                        $needs_divider = true;
-                    }
-
-                    // 8. MAP
-                    if ($show_map && !empty($property['city']) && !empty($property['country'])) {
-                        if ($needs_divider) echo '<div class="gvs-unit-divider"></div>';
-                        ?>
-                        <h3 class="gvs-unit-section-title">Location</h3>
-                        <div class="gvs-unit-map-wrapper">
-                            <iframe width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="https://maps.google.com/maps?q=<?php echo urlencode(trim($property['city']) . ', ' . trim($property['country'])); ?>&t=&z=13&ie=UTF8&iwloc=&output=embed"></iframe>
-                        </div>
-                        <?php
                     }
                     ?>
                 </div>
@@ -1246,8 +1446,52 @@ class Guesty_ALC_Unit_Pages {
                         <button type="button" id="gvs-unit-book-btn" class="gvs-bw-btn" disabled style="background: #cbd5e1; cursor: not-allowed;"><span class="gvs-bw-btn-text">Book</span></button>
                     </div>
                 </div>
-            </div>
-        </div>
+            </div> <!-- End Main Content Grid -->
+            
+            <!-- Full Width Elements Container -->
+            <div class="gvs-unit-full-width">
+                <?php 
+                // 7. FULL AVAILABILITY CALENDAR (Moved out of grid)
+                if ($show_full_calendar) {
+                    ?>
+                    <div class="gvs-unit-divider" style="margin-top: 0;"></div>
+                    <div class="gvs-cal-nav-row">
+                        <h3 class="gvs-unit-section-title" style="margin: 0;">Availability</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="gvs-custom-cal-btn" id="gvs-cal-nav-prev" aria-label="Previous months"><i class="ph ph-caret-left"></i></button>
+                            <button class="gvs-custom-cal-btn" id="gvs-cal-nav-next" aria-label="Next months"><i class="ph ph-caret-right"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div class="gvs-calendars-wrapper">
+                        <div class="gvs-cal-group" id="gvs-cal-part-1-wrap"><input type="text" id="gvs-cal-part-1" style="display:none;"></div>
+                        <div class="gvs-cal-group" id="gvs-cal-part-2-wrap"><input type="text" id="gvs-cal-part-2" style="display:none;"></div>
+                    </div>
+                    
+                    <div class="gvs-calendar-legend">
+                        <div class="gvs-legend-item"><span class="gvs-legend-box available"></span> Available</div>
+                        <div class="gvs-legend-item"><span class="gvs-legend-box unavailable"></span> Not Available</div>
+                        <?php if ($turnday_val): ?>
+                        <div class="gvs-legend-item"><span class="gvs-legend-box turnday"></span> <?php echo esc_html(substr($turnday_val, 0, 3) . ' - ' . substr($turnday_val, 0, 3)); ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <?php
+                }
+
+                // 8. MAP (Moved out of grid)
+                if ($show_map && !empty($property['city']) && !empty($property['country'])) {
+                    echo '<div class="gvs-unit-divider"></div>';
+                    ?>
+                    <h3 class="gvs-unit-section-title">Location</h3>
+                    <div class="gvs-unit-map-wrapper">
+                        <iframe width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="https://maps.google.com/maps?q=<?php echo urlencode(trim($property['city']) . ', ' . trim($property['country'])); ?>&t=&z=13&ie=UTF8&iwloc=&output=embed"></iframe>
+                    </div>
+                    <?php
+                }
+                ?>
+            </div> <!-- End Full Width Section -->
+
+        </div> <!-- End Main Unit Wrap -->
 
         <div id="gvs-lightbox" class="gvs-lightbox">
             <span class="gvs-lightbox-close">&times;</span>
@@ -1281,6 +1525,19 @@ class Guesty_ALC_Unit_Pages {
                 const maxThumbs = <?php echo esc_js($thumb_count); ?>;
                 const allGalleryImages = <?php echo json_encode($images); ?>;
                 let currentLightboxIndex = 0;
+
+                // Cleanup unused "Show All" buttons smoothly
+                setTimeout(() => {
+                    document.querySelectorAll('.gvs-show-all-btn').forEach(btn => {
+                        const targetId = btn.getAttribute('data-target');
+                        if (targetId) {
+                            const el = document.getElementById(targetId);
+                            if (el && el.scrollHeight <= el.clientHeight + 2) {
+                                btn.style.display = 'none';
+                            }
+                        }
+                    });
+                }, 300);
 
                 if (document.querySelector('.swiper-thumbs')) {
                     var swiperThumbs = new Swiper(".swiper-thumbs", {
@@ -1340,27 +1597,6 @@ class Guesty_ALC_Unit_Pages {
             function loadUnitFlatpickr(callback) {
                 if (window.flatpickr) { callback(); return; }
                 const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css'; document.head.appendChild(link);
-                const theme = document.createElement('style');
-                theme.innerHTML = `
-                    .flatpickr-calendar { font-family: inherit !important; border-radius: 12px !important; box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important; border: 1px solid #e2e8f0 !important; padding: 24px !important; background: #fff !important; width: auto !important; }
-                    .flatpickr-months { margin-bottom: 20px !important; position: relative !important; display: flex !important; gap: 24px !important; align-items: center !important; }
-                    .flatpickr-month { width: 280px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-                    .flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { border: 1px solid #cbd5e1 !important; border-radius: 6px !important; height: 32px !important; width: 32px !important; top: 50% !important; transform: translateY(-50%) !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 0 !important; color: #475569 !important; fill: #475569 !important; position: absolute !important; z-index: 10; }
-                    .flatpickr-months .flatpickr-prev-month:hover, .flatpickr-months .flatpickr-next-month:hover { background: #f8fafc !important; }
-                    .flatpickr-months .flatpickr-prev-month { left: 0px !important; } .flatpickr-months .flatpickr-next-month { right: 0px !important; }
-                    .flatpickr-current-month { font-size: 15px !important; font-weight: 600 !important; color: #1e293b !important; position: static !important; width: auto !important; padding: 0 !important; height: auto !important; display: inline-block !important; }
-                    .flatpickr-innerContainer { overflow: visible !important; }
-                    .flatpickr-weekdays { display: flex !important; gap: 24px !important; width: auto !important; }
-                    .flatpickr-weekdaycontainer { display: grid !important; grid-template-columns: repeat(7, 40px) !important; width: 280px !important; padding: 0 0 8px 0 !important; }
-                    .flatpickr-weekday { color: #64748b !important; font-weight: 600 !important; font-size: 13px !important; text-align: center !important; width: 40px !important; flex: none !important; margin: 0 !important; }
-                    .flatpickr-days { display: flex !important; gap: 24px !important; width: auto !important; border: none !important; }
-                    .dayContainer { width: 280px !important; min-width: 280px !important; max-width: 280px !important; display: grid !important; grid-template-columns: repeat(7, 40px) !important; box-shadow: none !important; padding: 0 !important; }
-                    .flatpickr-day { border-radius: 0 !important; color: #334155 !important; font-weight: 500 !important; height: 40px !important; line-height: 40px !important; width: 40px !important; max-width: 40px !important; border: none !important; margin: 0 !important; margin-top: 2px !important; box-sizing: border-box !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-                    .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange, .flatpickr-day.selected.inRange, .flatpickr-day.startRange.inRange, .flatpickr-day.endRange.inRange { background: var(--gvs-btn-color, <?php echo esc_attr($btn_color); ?>) !important; border-color: var(--gvs-btn-color, <?php echo esc_attr($btn_color); ?>) !important; color: #fff !important; box-shadow: none !important; }
-                    .flatpickr-day.inRange, .flatpickr-day.prevMonthDay.inRange, .flatpickr-day.nextMonthDay.inRange, .flatpickr-day.today.inRange { background: #f1f5f9 !important; border-color: #f1f5f9 !important; box-shadow: -5px 0 0 #f1f5f9, 5px 0 0 #f1f5f9 !important; }
-                    .flatpickr-day:hover { background: #e2e8f0 !important; color: #1e293b !important; }
-                `;
-                document.head.appendChild(theme);
                 const script = document.createElement('script'); script.id = 'flatpickr-script'; script.src = 'https://cdn.jsdelivr.net/npm/flatpickr'; script.onload = callback; document.head.appendChild(script);
             }
 
@@ -1405,11 +1641,13 @@ class Guesty_ALC_Unit_Pages {
                 fpAnchor.type = 'text'; fpAnchor.style.position = 'absolute'; fpAnchor.style.visibility = 'hidden'; fpAnchor.style.width = '0'; fpAnchor.style.height = '0';
                 checkin.parentNode.appendChild(fpAnchor);
                 
-                // Full Display Calendar Logic
-                let fpInline = null;
-                const fpInlineAnchor = document.getElementById('gvs-inline-calendar-anchor');
-                const turnDayString = '<?php echo esc_js($turnday_val); ?>'.toLowerCase();
-                const daysMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+                // Expose targetDay mapping globally so both sidebar and inline calendars catch it
+                let fpInline1 = null;
+                let fpInline2 = null;
+                const fpInlineAnchor1 = document.getElementById('gvs-cal-part-1');
+                const fpInlineAnchor2 = document.getElementById('gvs-cal-part-2');
+                const turnDayString = '<?php echo esc_js($turnday_val); ?>'.toLowerCase().trim();
+                const daysMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6, 'sun':0, 'mon':1, 'tue':2, 'wed':3, 'thu':4, 'fri':5, 'sat':6 };
                 const targetDay = daysMap[turnDayString];
 
                 function formatDateStr(dStr) {
@@ -1531,7 +1769,8 @@ class Guesty_ALC_Unit_Pages {
                         showMonths: window.innerWidth > 768 ? 2 : 1,
                         dateFormat: "Y-m-d",
                         disableMobile: true,
-                        positionElement: checkin,
+                        positionElement: trigger,
+                        position: "auto right",
                         disable: [],
                         onChange: function(selectedDates, dateStr, instance) {
                             errorMsg.style.display = 'none';
@@ -1548,25 +1787,49 @@ class Guesty_ALC_Unit_Pages {
                                 checkout.value = '';
                                 disableBookBtn();
                             }
+                        },
+                        onDayCreate: function(dObj, dStr, fpInst, dayElem) {
+                            if (targetDay !== undefined && dayElem.dateObj.getDay() === targetDay) {
+                                dayElem.classList.add('gvs-turnday-cell');
+                            }
                         }
                     });
 
-                    // 2. Full Inline 6-Month Display Calendar
-                    if (fpInlineAnchor) {
-                        fpInline = flatpickr(fpInlineAnchor, {
+                    // 2. Full Dual 6-Month Display Calendar
+                    if (fpInlineAnchor1 && fpInlineAnchor2) {
+                        const monthsPerInstance = window.innerWidth > 900 ? 3 : (window.innerWidth > 600 ? 2 : 1);
+                        
+                        let d2 = new Date();
+                        // Advance calendar 2 by exactly the number of months shown in calendar 1
+                        d2.setMonth(d2.getMonth() + monthsPerInstance);
+                        // Prevent jumping past short months (e.g. Jan 31 + 1 month = Mar 3)
+                        d2.setDate(1);
+
+                        const commonConfig = {
                             inline: true,
                             mode: "multiple",
-                            minDate: "today",
-                            showMonths: window.innerWidth > 900 ? 6 : (window.innerWidth > 600 ? 4 : 2),
+                            showMonths: monthsPerInstance,
                             disable: [],
-                            onChange: function(selectedDates, dateStr, instance) { 
-                                instance.clear(); 
-                            },
+                            onChange: function(selectedDates, dateStr, instance) { instance.clear(); },
                             onDayCreate: function(dObj, dStr, fpInst, dayElem) {
                                 if (targetDay !== undefined && dayElem.dateObj.getDay() === targetDay) {
                                     dayElem.classList.add('gvs-turnday-cell');
                                 }
                             }
+                        };
+
+                        fpInline1 = flatpickr(fpInlineAnchor1, Object.assign({}, commonConfig, { minDate: "today" }));
+                        fpInline2 = flatpickr(fpInlineAnchor2, Object.assign({}, commonConfig, { minDate: d2 }));
+                        
+                        // Bind Custom Nav Arrows to Sync Both Instances
+                        const btnPrev = document.getElementById('gvs-cal-nav-prev');
+                        const btnNext = document.getElementById('gvs-cal-nav-next');
+                        
+                        if (btnPrev) btnPrev.addEventListener('click', () => { 
+                            fpInline1.changeMonth(-1); fpInline2.changeMonth(-1); 
+                        });
+                        if (btnNext) btnNext.addEventListener('click', () => { 
+                            fpInline1.changeMonth(1); fpInline2.changeMonth(1); 
                         });
                     }
 
@@ -1593,7 +1856,8 @@ class Guesty_ALC_Unit_Pages {
                         .then(res => {
                             if (res.success && res.data && res.data.blocked_dates) {
                                 if (fp) fp.set('disable', res.data.blocked_dates);
-                                if (fpInline) fpInline.set('disable', res.data.blocked_dates);
+                                if (fpInline1) fpInline1.set('disable', res.data.blocked_dates);
+                                if (fpInline2) fpInline2.set('disable', res.data.blocked_dates);
                             }
                         })
                         .catch(() => console.warn('Could not refresh live calendar blocks.'));
