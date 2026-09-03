@@ -39,7 +39,8 @@ class Guesty_ALC_Checkout_System {
         add_rewrite_rule('^checkout/([^/]+)/?$', 'index.php?guesty_checkout=$matches[1]', 'top');
     }
 
-    public function add_query_vars($vars) {$vars[] = 'guesty_checkout';
+    public function add_query_vars($vars) {
+        $vars[] = 'guesty_checkout';
         return $vars;
     }
 
@@ -119,15 +120,16 @@ class Guesty_ALC_Checkout_System {
 
     private function get_access_token() {
         $token = get_transient('guesty_access_token');
-        if ($token) return$token;
-        $client_id = get_option('guesty_client_id');$client_secret = get_option('guesty_client_secret');
-        if (!$client_id \vert{}\vert{} !$client_secret) return false;
+        if ($token) return $token;
+        $client_id = get_option('guesty_client_id');
+        $client_secret = get_option('guesty_client_secret');
+        if (!$client_id || !$client_secret) return false;
 
-        $response = wp_remote_post('https://open-api.guesty.com/oauth2/token', [
+        $response = wp_remote_post('[https://open-api.guesty.com/oauth2/token](https://open-api.guesty.com/oauth2/token)', [
             'headers' => [ 'Accept' => 'application/json', 'Content-Type' => 'application/x-www-form-urlencoded' ],
-            'body' => [ 'grant_type' => 'client_credentials', 'client_id' => $client_id, 'client_secret' =>$client_secret ]
+            'body' => [ 'grant_type' => 'client_credentials', 'client_id' => $client_id, 'client_secret' => $client_secret ]
         ]);
-        if (is_wp_error($response) \vert{}\vert{} wp_remote_retrieve_response_code($response) != 200) return false;
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) != 200) return false;
         $body = json_decode(wp_remote_retrieve_body($response), true);
         if (is_array($body) && isset($body['access_token'])) {
             set_transient('guesty_access_token', $body['access_token'], 23 * HOUR_IN_SECONDS);
@@ -137,7 +139,7 @@ class Guesty_ALC_Checkout_System {
     }
 
     public function ajax_submit_checkout() {
-        if (!isset($_POST['nonce']) \vert{}\vert{} !wp_verify_nonce($_POST['nonce'], 'guesty_checkout_nonce')) {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'guesty_checkout_nonce')) {
             wp_send_json_error(['message' => 'Unauthorized request']);
         }
 
@@ -151,13 +153,12 @@ class Guesty_ALC_Checkout_System {
         $lname = sanitize_text_field($_POST['last_name'] ?? '');
         $email = sanitize_email($_POST['email'] ?? '');
         $phone = sanitize_text_field($_POST['phone'] ?? '');
-        $message = sanitize_textarea_field($_POST['message'] ?? '');
 
-        if (empty($fname) || empty($lname) \vert{}\vert{} empty($email)) {
+        if (empty($fname) || empty($lname) || empty($email)) {
             wp_send_json_error(['message' => 'Please fill in all required guest details.']);
         }
 
-        $token =$this->get_access_token();
+        $token = $this->get_access_token();
         if (!$token) wp_send_json_error(['message' => 'System authentication failure. Please contact support.']);
 
         $mode = get_option('guesty_checkout_mode', 'inquiry');
@@ -178,15 +179,11 @@ class Guesty_ALC_Checkout_System {
             ]
         ];
 
-        // Attach message as an internal note if provided
-        if (!empty($message)) {$payload['notes'] = "Guest Request/Message from Website: " . $message;
-        }
-
         if (!empty($coupon)) {
-            $payload['promotionCode'] =$coupon;
+            $payload['promotionCode'] = $coupon;
         }
 
-        $url = "https://open-api.guesty.com/v1/reservations";
+        $url = "[https://open-api.guesty.com/v1/reservations](https://open-api.guesty.com/v1/reservations)";
         $response = wp_remote_post($url, [
             'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
             'body' => wp_json_encode($payload),
@@ -201,14 +198,370 @@ class Guesty_ALC_Checkout_System {
         $body_raw = wp_remote_retrieve_body($response);
         $data = json_decode($body_raw, true);
 
-        if ($code >= 200 && $code < 300) {$success_url = get_option('guesty_checkout_successThis is a massive and exciting update. I have engineered a completely standalone, deeply integrated add-on file named **`addon-guesty-checkout.php`**. 
+        if ($code >= 200 && $code < 300) {
+            $success_url = get_option('guesty_checkout_success_url', home_url('/'));
+            wp_send_json_success(['redirect' => $success_url, 'message' => 'Reservation successfully created!']);
+        } else {
+            $err_msg = is_array($data) ? ($data['message'] ?? ($data['error'] ?? '')) : (is_string($data) ? $data : $body_raw);
+            wp_send_json_error(['message' => 'Guesty rejected the request: ' . $err_msg]);
+        }
+    }
 
-This new system dynamically intercepts the "Book Now" click from your unit pages, carries all the URL parameters (dates, guests, coupon) into a beautiful 2-column checkout screen, securely re-calculates the live quote using your existing API engine, and pushes the guest details directly into Guesty via the Open API as either a confirmed booking or an inquiry.
+    public function render_checkout_page() {
+        $unit_id = get_query_var('guesty_checkout');
+        if (empty($unit_id)) return;
 
-### **Installation Instructions**
+        $check_in = isset($_GET['checkIn']) ? sanitize_text_field($_GET['checkIn']) : '';
+        $check_out = isset($_GET['checkOut']) ? sanitize_text_field($_GET['checkOut']) : '';
+        $guests = isset($_GET['guests']) ? (int)$_GET['guests'] : 1;
+        $coupon = isset($_GET['promotionCode']) ? sanitize_text_field($_GET['promotionCode']) : '';
 
-**Step 1:** Create a brand new file inside your main `guesty-api-link-connect` folder and name it exactly **`addon-guesty-checkout.php`**. Paste the code below into it.
+        // If accessed directly without dates, redirect to home safely.
+        if (empty($check_in) || empty($check_out)) {
+            wp_redirect(home_url('/'));
+            exit;
+        }
 
-**Step 2:** Open your main **`guesty-api-link-connect.php`** file, and add this line near the top where the other `require_once` statements are:
-```php
-require_once GUESTY_ALC_PATH . 'addon-guesty-checkout.php';
+        // Fetch Unit Details from Cache
+        $listings = get_transient('guesty_listings_data');
+        if (!is_array($listings)) $listings = [];
+        $property = null;
+        foreach ($listings as $lst) {
+            if ($lst['id'] === $unit_id) { $property = $lst; break; }
+        }
+
+        if (!$property) {
+            wp_redirect(home_url('/'));
+            exit;
+        }
+
+        global $wp_query;
+        $wp_query->is_404 = false;
+        $wp_query->is_page = true;
+        status_header(200);
+
+        // Apply SEO Fixes
+        $browser_title = "Checkout - " . esc_html($property['title']);
+        add_filter('pre_get_document_title', function() use ($browser_title) { return $browser_title; }, 999);
+        add_filter('wpseo_title', function() use ($browser_title) { return $browser_title; }, 999);
+        add_filter('rank_math/frontend/title', function() use ($browser_title) { return $browser_title; }, 999);
+
+        get_header();
+        $this->print_checkout_layout($property, $check_in, $check_out, $guests, $coupon);
+        get_footer();
+        exit;
+    }
+
+    private function print_checkout_layout($property, $check_in, $check_out, $guests, $coupon) {
+        $btn_color = get_option('guesty_unit_btn_color', '#0062ff');
+        $bg_color = get_option('guesty_unit_bg_color', '#ffffff');
+        $terms_url = get_option('guesty_checkout_terms_url', '');
+        $mode = get_option('guesty_checkout_mode', 'inquiry');
+        $submit_text = $mode === 'inquiry' ? 'Send Inquiry' : 'Request to Book';
+        
+        $currency_mode = get_option('guesty_currency_display', 'auto');
+        $img_src = !empty($property['image']) ? $property['image'] : get_option('guesty_fallback_image', '');
+
+        ?>
+        <script src="[https://unpkg.com/@phosphor-icons/web](https://unpkg.com/@phosphor-icons/web)"></script>
+        
+        <style>
+            .ast-archive-entry-banner, .ast-breadcrumbs-wrapper, .page-header { display: none !important; }
+            .site-content, #content { background-color: <?php echo esc_attr($bg_color); ?> !important; }
+            @media (min-width: 922px) { 
+                div#content .ast-container, 
+                .site-content > .ast-container { max-width: 100% !important; padding: 0 !important; background-color: <?php echo esc_attr($bg_color); ?> !important; } 
+            }
+
+            .gvs-checkout-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1200px; margin: 60px auto; padding: 0 20px; color: #1d2327; box-sizing: border-box; }
+            
+            .gvs-checkout-grid { display: grid; grid-template-columns: 1fr 420px; gap: 60px; align-items: start; }
+            @media(max-width: 950px) { 
+                .gvs-checkout-grid { grid-template-columns: 1fr; gap: 40px; display: flex; flex-direction: column-reverse; } 
+            }
+
+            .gvs-checkout-main h1 { font-size: 32px; font-weight: 700; color: #0f172a; margin: 0 0 24px 0; }
+            .gvs-checkout-section-title { font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px 0; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
+
+            .gvs-input-group { margin-bottom: 20px; }
+            .gvs-input-group label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 6px; }
+            .gvs-input { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; font-size: 15px; color: #1d2327; box-sizing: border-box; outline: none; transition: border-color 0.2s; background: #fff; }
+            .gvs-input:focus { border-color: <?php echo esc_attr($btn_color); ?>; box-shadow: 0 0 0 3px rgba(0, 98, 255, 0.1); }
+            
+            .gvs-checkout-sidebar { position: sticky; top: 100px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+            .gvs-sidebar-img { width: 100%; height: 220px; object-fit: cover; border-radius: 8px; margin-bottom: 16px; }
+            .gvs-sidebar-title { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 20px; line-height: 1.3; }
+
+            .gvs-quote-loader-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.8); z-index: 10; display: flex; align-items: center; justify-content: center; border-radius: 8px; backdrop-filter: blur(2px); }
+            .gvs-quote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+            .gvs-quote-item { display: flex; flex-direction: column; }
+            .gvs-quote-item span { font-size: 13px; color: #64748b; margin-bottom: 2px; }
+            .gvs-quote-item strong { font-size: 14px; color: #0f172a; font-weight: 700; }
+            .gvs-quote-divider { height: 1px; background: #e2e8f0; width: 100%; margin: 15px 0; }
+
+            .gvs-quote-line { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #334155; margin-bottom: 8px; }
+            .gvs-quote-total { display: flex; justify-content: space-between; align-items: center; font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 5px; }
+            .gvs-quote-subline { display: flex; justify-content: space-between; font-size: 13px; color: #64748b; margin-top: 8px; padding-left: 10px; }
+
+            .gvs-checkout-btn { width: 100%; background: <?php echo esc_attr($btn_color); ?>; color: #fff; border: none; border-radius: 8px; padding: 16px; font-size: 18px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 30px; }
+            .gvs-checkout-btn:hover:not(:disabled) { opacity: 0.9; }
+            .gvs-checkout-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+            .gvs-error-box { background: #fee2e2; border-left: 4px solid #ef4444; color: #991b1b; padding: 16px; border-radius: 4px; margin-bottom: 24px; font-weight: 500; display: none; }
+            
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        </style>
+
+        <div class="gvs-checkout-wrap">
+            <div class="gvs-error-box" id="gvs-checkout-error"></div>
+            
+            <div class="gvs-checkout-grid">
+                <!-- LEFT COLUMN: GUEST FORM -->
+                <div class="gvs-checkout-main">
+                    <h1>Complete your Request</h1>
+                    
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 40px;">
+                        <h4 style="margin: 0 0 10px 0; font-size: 16px; color: #0f172a;">Your Trip Dates</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-size: 15px; color: #475569;"><i class="ph ph-calendar-blank" style="margin-right: 5px;"></i> <span id="gvs-display-checkin">-</span> &nbsp;&rarr;&nbsp; <span id="gvs-display-checkout">-</span></div>
+                            <a href="javascript:history.back()" style="font-size: 14px; font-weight: 600; color: <?php echo esc_attr($btn_color); ?>; text-decoration: none;">Edit</a>
+                        </div>
+                    </div>
+
+                    <h3 class="gvs-checkout-section-title">Guest Details</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="gvs-input-group">
+                            <label>First Name</label>
+                            <input type="text" id="gvs-fname" class="gvs-input" placeholder="e.g. Jane" required>
+                        </div>
+                        <div class="gvs-input-group">
+                            <label>Last Name</label>
+                            <input type="text" id="gvs-lname" class="gvs-input" placeholder="e.g. Doe" required>
+                        </div>
+                    </div>
+                    
+                    <div class="gvs-input-group">
+                        <label>Email Address</label>
+                        <input type="email" id="gvs-email" class="gvs-input" placeholder="e.g. jane@example.com" required>
+                    </div>
+                    
+                    <div class="gvs-input-group">
+                        <label>Phone Number</label>
+                        <input type="tel" id="gvs-phone" class="gvs-input" placeholder="e.g. +1 555-555-5555" required>
+                    </div>
+                    
+                    <?php if ($terms_url): ?>
+                    <div style="margin-top: 30px; display: flex; align-items: flex-start; gap: 10px;">
+                        <input type="checkbox" id="gvs-terms" style="margin-top: 4px; width: 18px; height: 18px; cursor: pointer;">
+                        <label for="gvs-terms" style="font-size: 14px; color: #475569; line-height: 1.5; cursor: pointer;">I agree to the <a href="<?php echo esc_url($terms_url); ?>" target="_blank" style="color: <?php echo esc_attr($btn_color); ?>; text-decoration: underline;">Terms and Conditions</a> and authorize the property manager to process this request.</label>
+                    </div>
+                    <?php endif; ?>
+
+                    <button type="button" id="gvs-submit-btn" class="gvs-checkout-btn" disabled>
+                        <span id="gvs-btn-text"><?php echo esc_html($submit_text); ?></span>
+                        <svg id="gvs-btn-spinner" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none; animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                    </button>
+                </div>
+
+                <!-- RIGHT COLUMN: SIDEBAR -->
+                <div class="gvs-checkout-sidebar">
+                    <img src="<?php echo esc_url($img_src); ?>" class="gvs-sidebar-img" alt="Property Image">
+                    <div class="gvs-sidebar-title"><?php echo esc_html($property['title']); ?></div>
+                    <div style="font-size: 14px; color: #64748b; margin-bottom: 20px;"><i class="ph ph-map-pin"></i> <?php echo esc_html($property['city'] . ', ' . $property['country']); ?></div>
+                    
+                    <div style="position: relative;" id="gvs-quote-container">
+                        <div class="gvs-quote-loader-overlay" id="gvs-quote-loader">
+                            <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="<?php echo esc_attr($btn_color); ?>" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                        </div>
+                        
+                        <div class="gvs-quote-grid">
+                            <div class="gvs-quote-item"><span>Check In</span><strong id="gvs-q-in">-</strong></div>
+                            <div class="gvs-quote-item"><span>Check Out</span><strong id="gvs-q-out">-</strong></div>
+                            <div class="gvs-quote-item"><span>Nights</span><strong id="gvs-q-nights">-</strong></div>
+                            <div class="gvs-quote-item"><span>Guests</span><strong id="gvs-q-guests"><?php echo esc_html($guests); ?></strong></div>
+                        </div>
+                        
+                        <div class="gvs-quote-divider"></div>
+                        <div class="gvs-quote-line"><span>Subtotal</span><strong id="gvs-q-sub">-</strong></div>
+                        
+                        <div id="gvs-q-fees-wrap">
+                            <div class="gvs-quote-line"><span>Fees</span><strong id="gvs-q-fees">-</strong></div>
+                            <div id="gvs-q-fees-list"></div>
+                        </div>
+                        
+                        <div class="gvs-quote-divider" id="gvs-q-pretax-div"></div>
+                        
+                        <div id="gvs-q-taxes-wrap">
+                            <div class="gvs-quote-line"><span>Taxes</span><strong id="gvs-q-taxes">-</strong></div>
+                            <div id="gvs-q-taxes-list"></div>
+                        </div>
+                        
+                        <div class="gvs-quote-divider"></div>
+                        <div class="gvs-quote-total"><span>Total</span><strong id="gvs-q-tot">-</strong></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                const checkIn = <?php echo json_encode($check_in); ?>;
+                const checkOut = <?php echo json_encode($check_out); ?>;
+                const guests = <?php echo json_encode($guests); ?>;
+                const unitId = <?php echo json_encode($property['id']); ?>;
+                const coupon = <?php echo json_encode($coupon); ?>;
+                const currencySetting = '<?php echo esc_js($currency_mode); ?>';
+                const hasTerms = <?php echo $terms_url ? 'true' : 'false'; ?>;
+
+                const btn = document.getElementById('gvs-submit-btn');
+                const btnText = document.getElementById('gvs-btn-text');
+                const btnSpinner = document.getElementById('gvs-btn-spinner');
+                const errorBox = document.getElementById('gvs-checkout-error');
+                const termsCheck = document.getElementById('gvs-terms');
+                
+                function formatMoney(amount, curr) {
+                    let c = (currencySetting !== 'auto' && currencySetting !== 'hidden') ? currencySetting : (curr || 'CAD');
+                    return new Intl.NumberFormat(undefined, { style: 'currency', currency: c, minimumFractionDigits: 2 }).format(amount);
+                }
+                
+                function buildSubline(name, amt, curr) {
+                    return `<div class="gvs-quote-subline"><span>${name}</span><span>${formatMoney(amt, curr)}</span></div>`;
+                }
+
+                function lockSystem(msg) {
+                    errorBox.innerText = msg;
+                    errorBox.style.display = 'block';
+                    btn.disabled = true;
+                    document.getElementById('gvs-quote-loader').style.display = 'none';
+                }
+
+                // 1. Fetch Dynamic Quote
+                const formData = new URLSearchParams();
+                formData.append('action', 'guesty_get_unit_quote');
+                formData.append('nonce', '<?php echo wp_create_nonce("guesty_unit_ajax_nonce"); ?>');
+                formData.append('unit_id', unitId);
+                formData.append('check_in', checkIn);
+                formData.append('check_out', checkOut);
+                formData.append('guests', guests);
+                if (coupon) formData.append('coupon', coupon);
+
+                fetch("<?php echo admin_url('admin-ajax.php'); ?>", { method: 'POST', body: formData, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+                .then(res => res.json())
+                .then(result => {
+                    if (result.success && result.data && result.data.quote) {
+                        const q = result.data.quote;
+                        const curr = q.currency;
+                        
+                        const d1 = new Date(checkIn + 'T00:00:00');
+                        const d2 = new Date(checkOut + 'T00:00:00');
+                        const nights = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+                        
+                        document.getElementById('gvs-display-checkin').innerText = d1.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        document.getElementById('gvs-display-checkout').innerText = d2.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        
+                        document.getElementById('gvs-q-in').innerText = d1.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        document.getElementById('gvs-q-out').innerText = d2.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        document.getElementById('gvs-q-nights').innerText = nights;
+                        
+                        document.getElementById('gvs-q-sub').innerText = formatMoney(q.subtotal, curr);
+                        
+                        if (q.fees > 0) {
+                            document.getElementById('gvs-q-fees').innerText = formatMoney(q.fees, curr);
+                            let feeHTML = '';
+                            if (q.fees_list) q.fees_list.forEach(f => { feeHTML += buildSubline(f.name, f.amount, curr); });
+                            document.getElementById('gvs-q-fees-list').innerHTML = feeHTML;
+                        } else {
+                            document.getElementById('gvs-q-fees-wrap').style.display = 'none';
+                        }
+                        
+                        if (q.taxes > 0) {
+                            document.getElementById('gvs-q-taxes').innerText = formatMoney(q.taxes, curr);
+                            let taxHTML = '';
+                            if (q.taxes_list) q.taxes_list.forEach(t => { taxHTML += buildSubline(t.name, t.amount, curr); });
+                            document.getElementById('gvs-q-taxes-list').innerHTML = taxHTML;
+                        } else {
+                            document.getElementById('gvs-q-taxes-wrap').style.display = 'none';
+                            document.getElementById('gvs-q-pretax-div').style.display = 'none';
+                        }
+                        
+                        document.getElementById('gvs-q-tot').innerText = formatMoney(q.total, curr);
+                        document.getElementById('gvs-quote-loader').style.display = 'none';
+                        
+                        // Enable Submission
+                        checkEnableState();
+                    } else {
+                        lockSystem((result.data && result.data.message) ? result.data.message : "Selected dates are no longer available. Please return and select different dates.");
+                    }
+                }).catch(() => lockSystem("Failed to retrieve live pricing. Please refresh the page."));
+
+                function checkEnableState() {
+                    if (hasTerms && !termsCheck.checked) {
+                        btn.disabled = true;
+                    } else {
+                        btn.disabled = false;
+                    }
+                }
+
+                if (hasTerms && termsCheck) {
+                    termsCheck.addEventListener('change', checkEnableState);
+                }
+
+                // 2. Handle Form Submission
+                btn.addEventListener('click', () => {
+                    const fname = document.getElementById('gvs-fname').value.trim();
+                    const lname = document.getElementById('gvs-lname').value.trim();
+                    const email = document.getElementById('gvs-email').value.trim();
+                    const phone = document.getElementById('gvs-phone').value.trim();
+                    
+                    if (!fname || !lname || !email || !phone) {
+                        alert("Please fill in all your contact details.");
+                        return;
+                    }
+
+                    btn.disabled = true;
+                    btnText.innerText = "Processing...";
+                    btnSpinner.style.display = "block";
+                    errorBox.style.display = 'none';
+
+                    const submitData = new URLSearchParams();
+                    submitData.append('action', 'guesty_submit_checkout');
+                    submitData.append('nonce', '<?php echo wp_create_nonce("guesty_checkout_nonce"); ?>');
+                    submitData.append('unit_id', unitId);
+                    submitData.append('check_in', checkIn);
+                    submitData.append('check_out', checkOut);
+                    submitData.append('guests', guests);
+                    if (coupon) submitData.append('coupon', coupon);
+                    submitData.append('first_name', fname);
+                    submitData.append('last_name', lname);
+                    submitData.append('email', email);
+                    submitData.append('phone', phone);
+
+                    fetch("<?php echo admin_url('admin-ajax.php'); ?>", { method: 'POST', body: submitData, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+                    .then(res => res.json())
+                    .then(result => {
+                        if (result.success && result.data && result.data.redirect) {
+                            btnText.innerText = "Success!";
+                            btnSpinner.style.display = "none";
+                            window.location.href = result.data.redirect;
+                        } else {
+                            btn.disabled = false;
+                            btnText.innerText = "<?php echo esc_js($submit_text); ?>";
+                            btnSpinner.style.display = "none";
+                            errorBox.innerText = (result.data && result.data.message) ? result.data.message : "Failed to process request.";
+                            errorBox.style.display = 'block';
+                        }
+                    }).catch(() => {
+                        btn.disabled = false;
+                        btnText.innerText = "<?php echo esc_js($submit_text); ?>";
+                        btnSpinner.style.display = "none";
+                        errorBox.innerText = "Network failure. Please try again.";
+                        errorBox.style.display = 'block';
+                    });
+                });
+            });
+        </script>
+        <?php
+    }
+}
+
+new Guesty_ALC_Checkout_System();
