@@ -125,7 +125,7 @@ class Guesty_ALC_Checkout_System {
         $client_secret = get_option('guesty_client_secret');
         if (!$client_id || !$client_secret) return false;
 
-        $response = wp_remote_post('[https://open-api.guesty.com/oauth2/token](https://open-api.guesty.com/oauth2/token)', [
+        $response = wp_remote_post('https://open-api.guesty.com/oauth2/token', [
             'headers' => [ 'Accept' => 'application/json', 'Content-Type' => 'application/x-www-form-urlencoded' ],
             'body' => [ 'grant_type' => 'client_credentials', 'client_id' => $client_id, 'client_secret' => $client_secret ]
         ]);
@@ -153,9 +153,11 @@ class Guesty_ALC_Checkout_System {
         $lname = sanitize_text_field($_POST['last_name'] ?? '');
         $email = sanitize_email($_POST['email'] ?? '');
         $phone = sanitize_text_field($_POST['phone'] ?? '');
+        $message = sanitize_textarea_field($_POST['message'] ?? ''); // Intercept the message
 
-        if (empty($fname) || empty($lname) || empty($email)) {
-            wp_send_json_error(['message' => 'Please fill in all required guest details.']);
+        // Strict Server-Side Validation
+        if (empty($fname) || empty($lname) || empty($email) || empty($phone)) {
+            wp_send_json_error(['message' => 'Please fill in all required guest details (*).']);
         }
 
         $token = $this->get_access_token();
@@ -179,11 +181,16 @@ class Guesty_ALC_Checkout_System {
             ]
         ];
 
+        // Attach message to the Guesty Reservation 'notes' field so managers can see it
+        if (!empty($message)) {
+            $payload['notes'] = "Message from Website Guest:\n" . $message;
+        }
+
         if (!empty($coupon)) {
             $payload['promotionCode'] = $coupon;
         }
 
-        $url = "[https://open-api.guesty.com/v1/reservations](https://open-api.guesty.com/v1/reservations)";
+        $url = "https://open-api.guesty.com/v1/reservations";
         $response = wp_remote_post($url, [
             'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
             'body' => wp_json_encode($payload),
@@ -263,7 +270,7 @@ class Guesty_ALC_Checkout_System {
         $img_src = !empty($property['image']) ? $property['image'] : get_option('guesty_fallback_image', '');
 
         ?>
-        <script src="[https://unpkg.com/@phosphor-icons/web](https://unpkg.com/@phosphor-icons/web)"></script>
+        <script src="https://unpkg.com/@phosphor-icons/web"></script>
         
         <style>
             .ast-archive-entry-banner, .ast-breadcrumbs-wrapper, .page-header { display: none !important; }
@@ -273,9 +280,11 @@ class Guesty_ALC_Checkout_System {
                 .site-content > .ast-container { max-width: 100% !important; padding: 0 !important; background-color: <?php echo esc_attr($bg_color); ?> !important; } 
             }
 
-            .gvs-checkout-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1200px; margin: 60px auto; padding: 0 20px; color: #1d2327; box-sizing: border-box; }
+            /* Increased width from 1200px to 1300px for more room */
+            .gvs-checkout-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1300px; margin: 60px auto; padding: 0 20px; color: #1d2327; box-sizing: border-box; }
             
-            .gvs-checkout-grid { display: grid; grid-template-columns: 1fr 420px; gap: 60px; align-items: start; }
+            /* Increased sidebar width from 420px to 450px */
+            .gvs-checkout-grid { display: grid; grid-template-columns: 1fr 450px; gap: 60px; align-items: start; }
             @media(max-width: 950px) { 
                 .gvs-checkout-grid { grid-template-columns: 1fr; gap: 40px; display: flex; flex-direction: column-reverse; } 
             }
@@ -285,11 +294,13 @@ class Guesty_ALC_Checkout_System {
 
             .gvs-input-group { margin-bottom: 20px; }
             .gvs-input-group label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 6px; }
-            .gvs-input { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; font-size: 15px; color: #1d2327; box-sizing: border-box; outline: none; transition: border-color 0.2s; background: #fff; }
+            .gvs-req { color: #dc2626; margin-left: 2px; } /* Red asterisk style */
+            .gvs-input { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; font-size: 15px; color: #1d2327; box-sizing: border-box; outline: none; transition: border-color 0.2s; background: #fff; font-family: inherit; }
             .gvs-input:focus { border-color: <?php echo esc_attr($btn_color); ?>; box-shadow: 0 0 0 3px rgba(0, 98, 255, 0.1); }
+            textarea.gvs-input { resize: vertical; }
             
             .gvs-checkout-sidebar { position: sticky; top: 100px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-            .gvs-sidebar-img { width: 100%; height: 220px; object-fit: cover; border-radius: 8px; margin-bottom: 16px; }
+            .gvs-sidebar-img { width: 100%; height: 240px; object-fit: cover; border-radius: 8px; margin-bottom: 16px; }
             .gvs-sidebar-title { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 20px; line-height: 1.3; }
 
             .gvs-quote-loader-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.8); z-index: 10; display: flex; align-items: center; justify-content: center; border-radius: 8px; backdrop-filter: blur(2px); }
@@ -331,35 +342,41 @@ class Guesty_ALC_Checkout_System {
                     <h3 class="gvs-checkout-section-title">Guest Details</h3>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                         <div class="gvs-input-group">
-                            <label>First Name</label>
+                            <label>First Name<span class="gvs-req">*</span></label>
                             <input type="text" id="gvs-fname" class="gvs-input" placeholder="e.g. Jane" required>
                         </div>
                         <div class="gvs-input-group">
-                            <label>Last Name</label>
+                            <label>Last Name<span class="gvs-req">*</span></label>
                             <input type="text" id="gvs-lname" class="gvs-input" placeholder="e.g. Doe" required>
                         </div>
                     </div>
                     
-                    <div class="gvs-input-group">
-                        <label>Email Address</label>
-                        <input type="email" id="gvs-email" class="gvs-input" placeholder="e.g. jane@example.com" required>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="gvs-input-group">
+                            <label>Email Address<span class="gvs-req">*</span></label>
+                            <input type="email" id="gvs-email" class="gvs-input" placeholder="e.g. jane@example.com" required>
+                        </div>
+                        <div class="gvs-input-group">
+                            <label>Phone Number<span class="gvs-req">*</span></label>
+                            <input type="tel" id="gvs-phone" class="gvs-input" placeholder="e.g. +1 555-555-5555" required>
+                        </div>
                     </div>
-                    
+
                     <div class="gvs-input-group">
-                        <label>Phone Number</label>
-                        <input type="tel" id="gvs-phone" class="gvs-input" placeholder="e.g. +1 555-555-5555" required>
+                        <label>Message (Optional)</label>
+                        <textarea id="gvs-message" class="gvs-input" rows="4" placeholder="Any special requests or details about your trip?"></textarea>
                     </div>
                     
                     <?php if ($terms_url): ?>
                     <div style="margin-top: 30px; display: flex; align-items: flex-start; gap: 10px;">
                         <input type="checkbox" id="gvs-terms" style="margin-top: 4px; width: 18px; height: 18px; cursor: pointer;">
-                        <label for="gvs-terms" style="font-size: 14px; color: #475569; line-height: 1.5; cursor: pointer;">I agree to the <a href="<?php echo esc_url($terms_url); ?>" target="_blank" style="color: <?php echo esc_attr($btn_color); ?>; text-decoration: underline;">Terms and Conditions</a> and authorize the property manager to process this request.</label>
+                        <label for="gvs-terms" style="font-size: 14px; color: #475569; line-height: 1.5; cursor: pointer;">I agree to the <a href="<?php echo esc_url($terms_url); ?>" target="_blank" style="color: <?php echo esc_attr($btn_color); ?>; text-decoration: underline;">Terms and Conditions</a> and authorize the property manager to process this request.<span class="gvs-req">*</span></label>
                     </div>
                     <?php endif; ?>
 
                     <button type="button" id="gvs-submit-btn" class="gvs-checkout-btn" disabled>
                         <span id="gvs-btn-text"><?php echo esc_html($submit_text); ?></span>
-                        <svg id="gvs-btn-spinner" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none; animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                        <svg id="gvs-btn-spinner" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none; animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
                     </button>
                 </div>
 
@@ -371,7 +388,7 @@ class Guesty_ALC_Checkout_System {
                     
                     <div style="position: relative;" id="gvs-quote-container">
                         <div class="gvs-quote-loader-overlay" id="gvs-quote-loader">
-                            <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="<?php echo esc_attr($btn_color); ?>" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="<?php echo esc_attr($btn_color); ?>" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
                         </div>
                         
                         <div class="gvs-quote-grid">
@@ -433,6 +450,7 @@ class Guesty_ALC_Checkout_System {
                     errorBox.style.display = 'block';
                     btn.disabled = true;
                     document.getElementById('gvs-quote-loader').style.display = 'none';
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
 
                 // 1. Fetch Dynamic Quote
@@ -512,9 +530,12 @@ class Guesty_ALC_Checkout_System {
                     const lname = document.getElementById('gvs-lname').value.trim();
                     const email = document.getElementById('gvs-email').value.trim();
                     const phone = document.getElementById('gvs-phone').value.trim();
+                    const message = document.getElementById('gvs-message').value.trim();
                     
                     if (!fname || !lname || !email || !phone) {
-                        alert("Please fill in all your contact details.");
+                        errorBox.innerText = "Please fill in all your required contact details marked with an asterisk (*).";
+                        errorBox.style.display = 'block';
+                        window.scrollTo({ top: errorBox.offsetTop - 100, behavior: 'smooth' });
                         return;
                     }
 
@@ -535,6 +556,7 @@ class Guesty_ALC_Checkout_System {
                     submitData.append('last_name', lname);
                     submitData.append('email', email);
                     submitData.append('phone', phone);
+                    if (message) submitData.append('message', message);
 
                     fetch("<?php echo admin_url('admin-ajax.php'); ?>", { method: 'POST', body: submitData, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
                     .then(res => res.json())
@@ -549,6 +571,7 @@ class Guesty_ALC_Checkout_System {
                             btnSpinner.style.display = "none";
                             errorBox.innerText = (result.data && result.data.message) ? result.data.message : "Failed to process request.";
                             errorBox.style.display = 'block';
+                            window.scrollTo({ top: errorBox.offsetTop - 100, behavior: 'smooth' });
                         }
                     }).catch(() => {
                         btn.disabled = false;
@@ -556,6 +579,7 @@ class Guesty_ALC_Checkout_System {
                         btnSpinner.style.display = "none";
                         errorBox.innerText = "Network failure. Please try again.";
                         errorBox.style.display = 'block';
+                        window.scrollTo({ top: errorBox.offsetTop - 100, behavior: 'smooth' });
                     });
                 });
             });
