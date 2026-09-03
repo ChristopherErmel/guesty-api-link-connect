@@ -165,19 +165,15 @@ class Guesty_ALC_Checkout_System {
 
         $mode = get_option('guesty_checkout_mode', 'inquiry');
 
-        // Formulate Strict ISO 8601 Timestamps for Guesty (Assuming standard checkin 15:00 / checkout 11:00)
-        $check_in_iso = $check_in . 'T15:00:00.000Z';
-        $check_out_iso = $check_out . 'T11:00:00.000Z';
-        $check_in_loc = $check_in . 'T15:00:00';
-        $check_out_loc = $check_out . 'T11:00:00';
+        // Formulate Strict Date format for Guesty (YYYY-MM-DD ONLY)
+        $clean_in = substr($check_in, 0, 10);
+        $clean_out = substr($check_out, 0, 10);
 
-        // Prepare Reservation Payload
+        // Prepare Reservation Payload (Removed banned checkInDate & checkOutDate fields)
         $payload = [
             'listingId' => $unit_id,
-            'checkInDate' => $check_in_iso,
-            'checkOutDate' => $check_out_iso,
-            'checkInDateLocalized' => $check_in_loc,
-            'checkOutDateLocalized' => $check_out_loc,
+            'checkInDateLocalized' => $clean_in,
+            'checkOutDateLocalized' => $clean_out,
             'guestsCount' => $guests,
             'status' => $mode, 
             'source' => 'website',
@@ -464,13 +460,13 @@ class Guesty_ALC_Checkout_System {
                 }
 
                 // 1. Fetch Dynamic Quote securely on load to prevent URL tampering
+                // Passing strict YYYY-MM-DD back to the quote engine (which relies on strpos evaluation)
                 const formData = new URLSearchParams();
                 formData.append('action', 'guesty_get_unit_quote');
                 formData.append('nonce', '<?php echo wp_create_nonce("guesty_unit_ajax_nonce"); ?>');
                 formData.append('unit_id', unitId);
-                // Send Full ISO format just like the payload
-                formData.append('check_in', checkIn + 'T15:00:00.000Z');
-                formData.append('check_out', checkOut + 'T11:00:00.000Z');
+                formData.append('check_in', checkIn);
+                formData.append('check_out', checkOut);
                 formData.append('guests', guests);
                 if (coupon) formData.append('coupon', coupon);
 
