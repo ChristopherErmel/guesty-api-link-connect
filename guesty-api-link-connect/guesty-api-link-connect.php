@@ -22,6 +22,7 @@ require_once GUESTY_ALC_PATH . 'includes/addon-guesty-foryou.php';
 require_once GUESTY_ALC_PATH . 'includes/shortcode-locations-grid.php';
 require_once GUESTY_ALC_PATH . 'includes/addon-location-locker.php';
 require_once GUESTY_ALC_PATH . 'includes/addon-dynamic-location-pages.php';
+require_once GUESTY_ALC_PATH . 'addon-guesty-checkout.php';
 
 /**
  * Initialize the plugin
