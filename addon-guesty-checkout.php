@@ -242,6 +242,19 @@ class Guesty_ALC_Checkout_System {
         }
     }
 
+    public function handle_redirects() {
+        if (get_query_var('guesty_checkout_success')) {
+            $this->render_success_page();
+            exit;
+        }
+
+        $unit_id = get_query_var('guesty_checkout');
+        if (!empty($unit_id)) {
+            $this->render_checkout_page($unit_id);
+            exit;
+        }
+    }
+
     public function render_success_page() {
         global $wp_query;
         $wp_query->is_404 = false;
@@ -320,19 +333,6 @@ class Guesty_ALC_Checkout_System {
         get_footer();
     }
 
-    public function handle_redirects() {
-        if (get_query_var('guesty_checkout_success')) {
-            $this->render_success_page();
-            exit;
-        }
-
-        $unit_id = get_query_var('guesty_checkout');
-        if (!empty($unit_id)) {
-            $this->render_checkout_page($unit_id);
-            exit;
-        }
-    }
-
     private function render_checkout_page($unit_id) {
         $check_in = isset($_GET['checkIn']) ? sanitize_text_field($_GET['checkIn']) : '';
         $check_out = isset($_GET['checkOut']) ? sanitize_text_field($_GET['checkOut']) : '';
@@ -408,9 +408,12 @@ class Guesty_ALC_Checkout_System {
 
             .gvs-checkout-wrap { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1300px; margin: 60px auto; padding: 0 20px; color: #1d2327; box-sizing: border-box; }
             
+            /* CSS Grid reordering fix for mobile screens so form appears below summary and sidebar is not sticky */
             .gvs-checkout-grid { display: grid; grid-template-columns: 1fr 450px; gap: 60px; align-items: start; }
             @media(max-width: 950px) { 
-                .gvs-checkout-grid { grid-template-columns: 1fr; gap: 40px; display: flex; flex-direction: column-reverse; } 
+                .gvs-checkout-grid { grid-template-columns: 1fr; gap: 40px; } 
+                .gvs-checkout-main { order: 2; }
+                .gvs-checkout-sidebar { order: 1; position: static !important; }
             }
 
             .gvs-checkout-main h1 { font-size: 32px; font-weight: 700; color: #0f172a; margin: 0 0 24px 0; }
