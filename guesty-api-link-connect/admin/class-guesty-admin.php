@@ -37,11 +37,13 @@ class Guesty_ALC_Admin {
         register_setting('guesty-settings-group', 'guesty_client_id');
         register_setting('guesty-settings-group', 'guesty_client_secret');
         register_setting('guesty-settings-group', 'guesty_base_url', 'sanitize_url');
-        register_setting('guesty-settings-group', 'guesty_search_results_url', 'sanitize_text_field'); // NEW GLOBAL URL SETTING
+        register_setting('guesty-settings-group', 'guesty_search_results_url', 'sanitize_text_field'); 
         register_setting('guesty-settings-group', 'guesty_enable_custom_fields_proxy');
         register_setting('guesty-settings-group', 'guesty_fallback_image', 'sanitize_url'); 
         register_setting('guesty-settings-group', 'guesty_cache_time_value');
         register_setting('guesty-settings-group', 'guesty_cache_time_unit');
+        register_setting('guesty-settings-group', 'guesty_last_minute_days');
+        register_setting('guesty-settings-group', 'guesty_last_minute_ignore_min_nights');
         register_setting('guesty-settings-group', 'guesty_enable_ajax');
         register_setting('guesty-settings-group', 'guesty_dynamic_pricing');
         register_setting('guesty-settings-group', 'guesty_search_active_amenities', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_filters']]);
@@ -120,6 +122,7 @@ class Guesty_ALC_Admin {
             $this->api->log('Manual Force Refresh Triggered via Dashboard.', 'INFO');
             $this->api->reset_cron_job(); 
             $this->api->get_listings(true);
+            $this->api->guesty_fetch_last_minute_availability();
             $_POST['view_guesty_data'] = 1; 
             echo '<div class="notice notice-success is-dismissible"><p>Data Synchronized Successfully!</p></div>';
             $active_tab = 'data';
