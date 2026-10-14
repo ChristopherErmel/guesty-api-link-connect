@@ -179,6 +179,30 @@
 
                 <hr style="margin: 30px 0;">
 
+                <h3 style="margin-top:0;">Last Minute Cottages</h3>
+                <p class="description">Configure the global timeframe used by the <code>[guesty_last_minute]</code> shortcode system. The plugin will check for properties that are fully open and available to rent across this window.</p>
+                <table class="form-table">
+                    <tr valign="top">
+                        <th scope="row">Availability Window</th>
+                        <td>
+                            <input type="number" name="guesty_last_minute_days" value="<?php echo esc_attr(get_option('guesty_last_minute_days', '3')); ?>" style="width: 80px;" min="1" />
+                            <span class="description"> days from today.</span>
+                        </td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row">Ignore Nightly Restrictions</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="guesty_last_minute_ignore_min_nights" value="yes" <?php checked(get_option('guesty_last_minute_ignore_min_nights', 'no'), 'yes'); ?> />
+                                <strong>Show properties even if the available gap is smaller than their minimum night rule.</strong>
+                            </label>
+                            <p class="description" style="margin-top: 5px;">If unchecked, units will only appear if their consecutive open dates meet their Guesty minimum night requirement.</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <hr style="margin: 30px 0;">
+
                 <h3 style="margin-top:0;">Cache & Performance</h3>
                 <table class="form-table">
                     <tr valign="top">
@@ -608,6 +632,7 @@
                                 <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="standard" checked onchange="gvsUpdateShortcode()"> Standard Property Grid</label>
                                 <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="locations" onchange="gvsUpdateShortcode()"> Dynamic Locations Grid</label>
                                 <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="foryou" onchange="gvsUpdateShortcode()"> "For You" Recommendation Widget</label>
+                                <label style="font-weight: 600;"><input type="radio" name="gvs-sc-type" value="lastminute" onchange="gvsUpdateShortcode()"> Last Minute Grid</label>
                             </div>
                         </td>
                     </tr>
@@ -650,6 +675,19 @@
                         </td>
                     </tr>
                 </tbody>
+
+                <!-- LAST MINUTE GRID BLURB -->
+                <tbody id="gvs-sc-options-lastminute" style="display: none;">
+                    <tr>
+                        <td colspan="2" style="padding: 20px 0 0 0;">
+                            <div style="background: #fff; border-left: 4px solid #16a34a; padding: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                <h4 style="margin: 0 0 8px 0; color: #1d2327; font-size: 15px;">Last Minute Cottages</h4>
+                                <p class="description" style="margin: 0; font-size: 14px;">Outputs a grid of properties that are completely open and available to rent over the next X days (based on your Settings tab configuration). Updates automatically every 24 hours.</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+
             </table>
             <div style="margin-top: 25px; padding-top: 20px; border-top: 1px dashed #d1d5db;">
                 <h4 style="margin-top: 0; margin-bottom: 10px; color: #1d2327;">Your Generated Shortcode:</h4>
@@ -976,6 +1014,7 @@
         document.getElementById('gvs-sc-options-standard').style.display = 'none';
         document.getElementById('gvs-sc-options-locations').style.display = 'none';
         document.getElementById('gvs-sc-options-foryou').style.display = 'none';
+        document.getElementById('gvs-sc-options-lastminute').style.display = 'none';
         
         let sc = '';
         
@@ -985,6 +1024,9 @@
         } else if (scType === 'locations') {
             document.getElementById('gvs-sc-options-locations').style.display = 'table-row-group';
             sc = '[guesty_locations_grid]';
+        } else if (scType === 'lastminute') {
+            document.getElementById('gvs-sc-options-lastminute').style.display = 'table-row-group';
+            sc = '[guesty_last_minute]';
         } else {
             document.getElementById('gvs-sc-options-standard').style.display = 'table-row-group';
             sc = '[guesty_perfect_stay';
