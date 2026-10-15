@@ -2,14 +2,12 @@
 if (!defined('ABSPATH')) exit;
 
 class Guesty_ALC_API {
-
     private $token_url = 'https://open-api.guesty.com/oauth2/token';
     private $api_url = 'https://open-api.guesty.com/v1/listings';
     public $api; 
 
     public function __construct() {
         $this->api = $this;
-
         add_filter('cron_schedules', [$this, 'add_custom_cron_schedule']);
         add_action('init', [$this, 'setup_cron_job']);
         add_action('guesty_background_cache_refresh', [$this, 'background_refresh_listings']);
@@ -31,6 +29,10 @@ class Guesty_ALC_API {
             }
         }
         return $pre_transient;
+    }
+
+    public function force_disable_ajax_for_lm() {
+        return 'no';
     }
 
     public function render_last_minute_shortcode($atts) {
@@ -64,25 +66,28 @@ class Guesty_ALC_API {
             ];
         }
 
-        $json_by_title = json_encode($date_map_by_title);
-        $json_by_id = json_encode($date_map_by_id);
-        $json_by_slug = json_encode($date_map_by_slug);
-        $json_debug_rows = json_encode($console_debug_rows);
+        $json_by_title = wp_json_encode($date_map_by_title);
+        $json_by_id = wp_json_encode($date_map_by_id);
+        $json_by_slug = wp_json_encode($date_map_by_slug);
+        $json_debug_rows = wp_json_encode($console_debug_rows);
         $lm_days_setting = (int) get_option('guesty_last_minute_days', 3);
         $lm_ignore_min = get_option('guesty_last_minute_ignore_min_nights', 'no') === 'yes';
 
+        // Temporarily force local (non-AJAX) rendering so the Last Minute grid strictly uses the Last Minute transient
         $GLOBALS['gvs_is_last_minute'] = true;
+        add_filter('pre_option_guesty_enable_ajax', [$this, 'force_disable_ajax_for_lm']);
         
         $unique_id = 'gvs-lm-wrap-' . wp_generate_password(6, false);
         $html = "<div id='{$unique_id}'>" . do_shortcode('[guesty_perfect_stay hide_tabs="false"]') . "</div>";
         
+        remove_filter('pre_option_guesty_enable_ajax', [$this, 'force_disable_ajax_for_lm']);
         $GLOBALS['gvs_is_last_minute'] = false;
         
         // Inject script to rename header, log debug data to console, and append availability dates
         $html .= "<script>
             document.addEventListener('DOMContentLoaded', function() {
                 const debugRows = {$json_debug_rows};
-                console.group('🔍 Guesty Last Minute Cottages Debug');
+                console.group('Guesty Last Minute Cottages Debug');
                 console.log('Window Setting (Days):', {$lm_days_setting});
                 console.log('Ignore Min Nights Setting:', " . ($lm_ignore_min ? 'true' : 'false') . ");
                 console.log('Total Available Units in Cache:', debugRows.length);
@@ -110,24 +115,29 @@ class Guesty_ALC_API {
                 if (!gridWrap) return;
 
                 function resolveDatesForCard(card) {
-                    // 1. Try matching by ID or Slug in the View Cottage button URL first
-                    let linkEl = card.querySelector('a.gvs-view-btn, a');
+                    // 1. Direct match via data-unit-id attribute on the card
+                    if (card.dataset && card.dataset.unitId && dateMapId[card.dataset.unitId]) {
+                        return dateMapId[card.dataset.unitId];
+                    }
+
+                    // 2. Try matching by ID or Slug in the View Cottage button URL
+                    let linkEl = card.matches('a') ? card : card.querySelector('a.gvs-view-btn, a');
                     if (linkEl && linkEl.href) {
                         for (const [id, str] of Object.entries(dateMapId)) {
                             if (id && linkEl.href.includes(id)) return str;
                         }
                         for (const [slug, str] of Object.entries(dateMapSlug)) {
-                            if (slug && linkEl.href.includes('/' + slug)) return str;
+                            if (slug && linkEl.href.includes('/' + slug + '/')) return str;
                         }
                     }
 
-                    // 2. Try exact title match
+                    // 3. Try exact title match
                     let titleEl = card.querySelector('.gvs-location');
                     if (titleEl) {
                         let titleText = titleEl.innerText.trim();
                         if (dateMapTitle[titleText]) return dateMapTitle[titleText];
 
-                        // 3. Fallback prefix match if title was truncated with '...'
+                        // 4. Fallback prefix match if title was truncated with '...'
                         let cleanPrefix = titleText.replace(/\.+$/, '').trim();
                         if (cleanPrefix.length > 5) {
                             for (const [fullTitle, str] of Object.entries(dateMapTitle)) {
@@ -138,8 +148,7 @@ class Guesty_ALC_API {
                     return null;
                 }
 
-                // Watch the DOM for property cards rendering, then inject the dates
-                const observer = new MutationObserver((mutations) => {
+                function applyLmBadges() {
                     document.querySelectorAll('#{$unique_id} .gvs-card').forEach(card => {
                         if (card.dataset.lmDatesAdded) return;
                         
@@ -161,9 +170,12 @@ class Guesty_ALC_API {
                             card.dataset.lmDatesAdded = 'true';
                         }
                     });
-                });
-                
+                }
+
+                // Watch the DOM for property cards rendering, then inject the dates
+                const observer = new MutationObserver(() => applyLmBadges());
                 observer.observe(gridWrap, { childList: true, subtree: true });
+                applyLmBadges();
             });
         </script>";
 
@@ -173,21 +185,23 @@ class Guesty_ALC_API {
     private function format_available_dates_string($dates) {
         if (empty($dates)) return '';
         
+        $tz = wp_timezone();
         $clean_dates = [];
         foreach ($dates as $d) {
-            $dt = new DateTime($d);
-            $clean_dates[] = $dt->format('Y-m-d');
+            $dt = DateTime::createFromFormat('Y-m-d', substr($d, 0, 10), $tz);
+            if ($dt) $clean_dates[] = $dt->format('Y-m-d');
         }
-        $clean_dates = array_unique($clean_dates);
+        $clean_dates = array_values(array_unique($clean_dates));
         sort($clean_dates);
+        if (empty($clean_dates)) return '';
         
         $blocks = [];
         $current_block = [$clean_dates[0]];
         
         for ($i = 1; $i < count($clean_dates); $i++) {
-            $prev = new DateTime($clean_dates[$i-1]);
-            $curr = new DateTime($clean_dates[$i]);
-            if ($prev->diff($curr)->days == 1) { 
+            $prev = DateTime::createFromFormat('Y-m-d', $clean_dates[$i-1], $tz);
+            $curr = DateTime::createFromFormat('Y-m-d', $clean_dates[$i], $tz);
+            if ($prev && $curr && $prev->diff($curr)->days == 1) { 
                 $current_block[] = $clean_dates[$i];
             } else {
                 $blocks[] = $current_block;
@@ -198,25 +212,26 @@ class Guesty_ALC_API {
 
         $formatted_blocks = [];
         foreach ($blocks as $block) {
-            $start_time = strtotime($block[0]);
-            $end_time = strtotime(end($block));
-            $month = date('M', $start_time);
+            $start_dt = DateTime::createFromFormat('Y-m-d', $block[0], $tz);
+            $end_dt = DateTime::createFromFormat('Y-m-d', end($block), $tz);
+            $month = $start_dt->format('M');
             
             if (count($block) == 1) {
-                $formatted_blocks[] = $month . ' ' . date('j', $start_time);
+                $formatted_blocks[] = $month . ' ' . $start_dt->format('j');
             } elseif (count($block) == 2) {
-                $end_month = date('M', $end_time);
+                $end_month = $end_dt->format('M');
                 if ($month === $end_month) {
-                    $formatted_blocks[] = $month . ' ' . date('j', $start_time) . ' & ' . date('j', $end_time);
+                    $formatted_blocks[] = $month . ' ' . $start_dt->format('j') . ' & ' . $end_dt->format('j');
                 } else {
-                    $formatted_blocks[] = $month . ' ' . date('j', $start_time) . ' & ' . $end_month . ' ' . date('j', $end_time);
+                    $formatted_blocks[] = $month . ' ' . $start_dt->format('j') . ' & ' . $end_month . ' ' . $end_dt->format('j');
                 }
             } else {
-                $end_month = date('M', $end_time);
-                $end_str = ($month === $end_month) ? date('j', $end_time) : $end_month . ' ' . date('j', $end_time);
-                $formatted_blocks[] = $month . ' ' . date('j', $start_time) . ' to ' . $end_str;
+                $end_month = $end_dt->format('M');
+                $end_str = ($month === $end_month) ? $end_dt->format('j') : $end_month . ' ' . $end_dt->format('j');
+                $formatted_blocks[] = $month . ' ' . $start_dt->format('j') . ' to ' . $end_str;
             }
         }
+
         return 'Available: ' . implode(', ', $formatted_blocks);
     }
 
@@ -357,7 +372,7 @@ class Guesty_ALC_API {
         return false;
     }
 
-     public function get_listing_custom_fields($property_id) {
+    public function get_listing_custom_fields($property_id) {
         $token = $this->get_access_token();
         if (!$token) return ['success' => false, 'error' => 'Failed to authenticate with Guesty.'];
 
@@ -397,6 +412,7 @@ class Guesty_ALC_API {
         $block_reasons = []; 
         $available_days = []; 
         $debug_trace = [];
+
         $stay_length = max(1, round((strtotime($end_date) - strtotime($start_date)) / 86400));
         $valid_days_count = 0;
 
@@ -414,49 +430,42 @@ class Guesty_ALC_API {
                     $day_date = $day['date'] ?? '';
                     if (empty($day_date)) continue;
                     
-                    $dt = new DateTime($day_date);
-                    $norm_date = $dt->format('Y-m-d');
-                    
-                    $day_is_available = false;
+                    $norm_date = substr($day_date, 0, 10);
+                    $day_is_available = true;
                     $reason_tag = 'open';
 
-                    if (isset($day['status'])) {
-                        $st = strtolower((string)$day['status']);
-                        if ($st === 'available') {
-                            $day_is_available = true;
-                        } else {
-                            $day_is_available = false;
-                            $reason_tag = "status:$st";
-                        }
-                    } elseif (isset($day['allotment']) && is_numeric($day['allotment'])) {
-                        $day_is_available = ((int)$day['allotment'] > 0);
-                        if (!$day_is_available) $reason_tag = "allotment:0";
-                    }
-
-                    // If allotment is explicitly 0, override to false
-                    if (isset($day['allotment']) && is_numeric($day['allotment']) && (int)$day['allotment'] <= 0) {
-                        $day_is_available = false;
-                        $reason_tag = "allotment:0";
-                    }
-
-                    // Check active blockRefs array
-                    if ($day_is_available && !empty($day['blockRefs']) && is_array($day['blockRefs'])) {
-                        $day_is_available = false;
-                        $reason_tag = "blockRefs";
-                    }
-
-                    // Check boolean flags inside $day['blocks'] (ONLY mark false if a flag is actually TRUE)
-                    if ($day_is_available && isset($day['blocks']) && is_array($day['blocks'])) {
+                    // 1. Check explicit boolean flags inside $day['blocks'] (Matches Unit Page Calendar logic)
+                    if (isset($day['blocks']) && is_array($day['blocks'])) {
                         foreach ($day['blocks'] as $b_key => $b_val) {
                             if ($b_val === true || $b_val === 1 || $b_val === 'true') {
                                 $day_is_available = false;
-                                $reason_tag = "blocks.$b_key:true";
+                                $reason_tag = "blocks.{$b_key}:true";
                                 break;
                             }
                         }
                     }
 
-                    $min_n = isset($day['minNights']) ? (int)$day['minNights'] : 1;
+                    // 2. Check explicit isAvailable flag (Matches Unit Page Calendar logic)
+                    if ($day_is_available && isset($day['isAvailable']) && $day['isAvailable'] === false) {
+                        $day_is_available = false;
+                        $reason_tag = "isAvailable:false";
+                    }
+
+                    // 3. Check status/allotment for booked nights (Matches Unit Page Calendar logic)
+                    if ($day_is_available) {
+                        if (isset($day['status'])) {
+                            $st = strtolower((string)$day['status']);
+                            if ($st !== 'available') {
+                                $day_is_available = false;
+                                $reason_tag = "status:{$st}";
+                            }
+                        } elseif (isset($day['allotment']) && is_numeric($day['allotment']) && (int)$day['allotment'] <= 0) {
+                            $day_is_available = false;
+                            $reason_tag = "allotment:0";
+                        }
+                    }
+
+                    $min_n = isset($day['minNights']) && (int)$day['minNights'] > 0 ? (int)$day['minNights'] : 1;
                     $eval_days[$norm_date] = [
                         'is_open' => $day_is_available,
                         'minNights' => $min_n,
@@ -465,51 +474,61 @@ class Guesty_ALC_API {
                     $day_status_summary[] = "$norm_date=" . ($day_is_available ? "OPEN(min:$min_n)" : "CLOSED($reason_tag)");
                 }
 
+                $tz = wp_timezone();
                 $window_limit_str = $lm_window_end ?: $end_date;
-                $start_dt = new DateTime($start_date);
-                $end_dt = new DateTime($window_limit_str);
+                $iter_dt = DateTime::createFromFormat('Y-m-d', $start_date, $tz);
+                $fetch_end_dt = DateTime::createFromFormat('Y-m-d', $end_date, $tz);
 
                 $current_block = [];
                 $block_min_nights = 1;
                 $valid_lm_dates = [];
+
+                // Helper to evaluate a contiguous open block of dates
+                $evaluate_block = function($block, $min_req, $label) use ($ignore_min_nights, $window_limit_str, &$valid_lm_dates, &$debug_trace) {
+                    if (empty($block)) return;
+                    // Only consider blocks that start on or before the Last Minute window limit
+                    if ($block[0] > $window_limit_str) return;
+
+                    $full_len = count($block);
+                    // Restrict displayed dates on the card overlay to the configured Last Minute window
+                    $dates_in_window = array_values(array_filter($block, function($d) use ($window_limit_str) {
+                        return $d <= $window_limit_str;
+                    }));
+
+                    if (empty($dates_in_window)) return;
+
+                    // Validate minNights against the full contiguous open block (including lookahead days)
+                    if ($ignore_min_nights || $full_len >= $min_req) {
+                        $valid_lm_dates = array_merge($valid_lm_dates, $dates_in_window);
+                        $debug_trace[] = "{$label} [" . $block[0] . " to " . end($block) . "] PASSED (FullLen: $full_len, InWindow: " . count($dates_in_window) . ", MinReq: $min_req)";
+                    } else {
+                        $debug_trace[] = "{$label} [" . $block[0] . " to " . end($block) . "] REJECTED (FullLen: $full_len < MinReq: $min_req)";
+                    }
+                };
                 
-                // Iterate strictly day-by-day across the user's configured Last Minute window
-                while ($start_dt <= $end_dt) {
-                    $date = $start_dt->format('Y-m-d');
+                // Iterate strictly day-by-day across the fetched window (including lookahead)
+                while ($iter_dt <= $fetch_end_dt) {
+                    $date = $iter_dt->format('Y-m-d');
                     $is_open = isset($eval_days[$date]) ? $eval_days[$date]['is_open'] : false;
                     $min_n = isset($eval_days[$date]) ? $eval_days[$date]['minNights'] : 1;
 
                     if ($is_open) {
                         if (empty($current_block)) {
                             $block_min_nights = $min_n;
-                        } else {
-                            $block_min_nights = max($block_min_nights, $min_n);
                         }
                         $current_block[] = $date;
                     } else {
                         if (!empty($current_block)) {
-                            $blk_len = count($current_block);
-                            if ($ignore_min_nights || $blk_len >= $block_min_nights) {
-                                $valid_lm_dates = array_merge($valid_lm_dates, $current_block);
-                                $debug_trace[] = "Block [" . $current_block[0] . " to " . end($current_block) . "] PASSED (Len: $blk_len, MinReq: $block_min_nights)";
-                            } else {
-                                $debug_trace[] = "Block [" . $current_block[0] . " to " . end($current_block) . "] REJECTED (Len: $blk_len < MinReq: $block_min_nights)";
-                            }
+                            $evaluate_block($current_block, $block_min_nights, 'Block');
                             $current_block = [];
                         }
                     }
-                    $start_dt->modify('+1 day');
+                    $iter_dt->modify('+1 day');
                 }
                 
-                // Evaluate any open block that reaches the end of the window
+                // Evaluate any open block that reaches the end of the fetched window
                 if (!empty($current_block)) {
-                    $blk_len = count($current_block);
-                    if ($ignore_min_nights || $blk_len >= $block_min_nights) {
-                        $valid_lm_dates = array_merge($valid_lm_dates, $current_block);
-                        $debug_trace[] = "End Block [" . $current_block[0] . " to " . end($current_block) . "] PASSED (Len: $blk_len, MinReq: $block_min_nights)";
-                    } else {
-                        $debug_trace[] = "End Block [" . $current_block[0] . " to " . end($current_block) . "] REJECTED (Len: $blk_len < MinReq: $block_min_nights)";
-                    }
+                    $evaluate_block($current_block, $block_min_nights, 'End Block');
                 }
                 
                 $is_available = !empty($valid_lm_dates);
@@ -518,7 +537,7 @@ class Guesty_ALC_API {
                 $log_status = $is_available ? 'SUCCESS' : 'INFO';
                 $this->log(
                     "LM Unit Check [$lid]: " . ($is_available ? "AVAILABLE" : "UNAVAILABLE") . "\n" .
-                    "Window: {$start_date} to {$window_limit_str} | IgnoreMinNights: " . ($ignore_min_nights ? 'YES' : 'NO') . "\n" .
+                    "LM Window: {$start_date} to {$window_limit_str} (Lookahead to {$end_date}) | IgnoreMinNights: " . ($ignore_min_nights ? 'YES' : 'NO') . "\n" .
                     "Day Breakdown: " . implode(', ', $day_status_summary) . "\n" .
                     "Block Eval: " . (empty($debug_trace) ? 'No open days found' : implode(' | ', $debug_trace)) . "\n" .
                     "Final Dates: " . (empty($valid_lm_dates) ? 'None' : implode(', ', $valid_lm_dates)),
@@ -560,7 +579,6 @@ class Guesty_ALC_API {
                         $day_is_available = false;
                         $block_reasons[] = "{$day_date} (violates maxNights of {$day['maxNights']})";
                     }
-
                     if (!empty($day_date) && strpos($day_date, $start_date) !== false && isset($day['cta']) && $day['cta'] == true) {
                         $day_is_available = false;
                         $block_reasons[] = "{$day_date} (Closed to Arrival)";
@@ -580,7 +598,6 @@ class Guesty_ALC_API {
                     $block_reasons[] = "Incomplete calendar data. Expected {$stay_length} days, got {$valid_days_count}.";
                 }
             }
-
         } elseif (isset($item['status'])) {
              $is_available = strtolower($item['status']) === 'available';
              if (!$is_available) $block_reasons[] = "Unit overall status: {$item['status']}";
@@ -590,8 +607,8 @@ class Guesty_ALC_API {
             $block_reasons[] = "No calendar data returned for unit by Guesty.";
         }
         
-        if (!$is_available && !$is_last_minute) { 
-            $this->log("Unit {$lid} marked UNAVAILABLE. Reasons: " . implode(', ', array_unique($block_reasons)), 'INFO');
+        if (!$is_available && !$is_last_minute) {
+             $this->log("Unit {$lid} marked UNAVAILABLE. Reasons: " . implode(', ', array_unique($block_reasons)), 'INFO');
         }
 
         return [
@@ -660,7 +677,6 @@ class Guesty_ALC_API {
         $active = null;
         do {
             while (($mrc = curl_multi_exec($mh, $active)) == CURLM_CALL_MULTI_PERFORM);
-
             if ($mrc != CURLM_OK) break;
 
             while ($info = curl_multi_info_read($mh)) {
@@ -692,7 +708,6 @@ class Guesty_ALC_API {
                     if (!$found_data) {
                         $results[$id] = ['is_available' => false, 'total_price' => 0];
                     }
-
                 } elseif (($code == 429 || $code == 403 || $code >= 500) && $retries[$id] < $max_retries) {
                     $this->log("Unit {$id} hit HTTP {$code} (Rate Limit). Re-queuing to back of the line...", 'WARNING');
                     $retries[$id]++;
@@ -712,18 +727,15 @@ class Guesty_ALC_API {
                 while (!empty($queue) && count($handles) < $max_concurrent) {
                     $add_request(array_shift($queue));
                 }
-
                 while (($mrc = curl_multi_exec($mh, $active)) == CURLM_CALL_MULTI_PERFORM);
             }
 
             if ($active) {
                 curl_multi_select($mh, 0.1);
             }
-
         } while ($active || !empty($queue) || count($handles) > 0);
 
         curl_multi_close($mh);
-
         return ['success' => true, 'data' => $results];
     }
 
@@ -810,10 +822,9 @@ class Guesty_ALC_API {
         }
 
         sort($valid_ids);
-        $cache_prefix = $is_last_minute ? 'guesty_lm_avail_v13_' : 'guesty_live_avail_v13_';
+        $cache_prefix = $is_last_minute ? 'guesty_lm_avail_v14_' : 'guesty_live_avail_v14_';
         $cache_key = $cache_prefix . md5($start_date . '_' . $end_date . '_' . implode(',', $valid_ids) . '_' . ($ignore_min_nights ? '1' : '0') . '_' . $lm_window_end);
         $cached_result = get_transient($cache_key);
-
         if (false !== $cached_result) {
             $this->log("Returning cached availability for dates {$start_date} to {$end_date} (Cache expires in 5 mins).", 'INFO');
             return $cached_result;
@@ -869,6 +880,7 @@ class Guesty_ALC_API {
 
     public function get_listings($force_refresh = false) {
         if (get_option('guesty_is_manually_cleared', 'no') === 'yes') return [];
+
         if (!$force_refresh) {
             $cached_listings = get_transient('guesty_listings_data');
             if ($cached_listings) return $cached_listings;
@@ -883,6 +895,7 @@ class Guesty_ALC_API {
 
         while ($has_more) {
             $max_retries = 3; $attempt = 0; $chunk_success = false;
+
             while ($attempt < $max_retries) {
                 $response = wp_remote_get($this->api_url . "?limit={$limit}&skip={$skip}&active=true&listed=true", [
                     'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json' ], 'timeout' => 30 
@@ -990,8 +1003,8 @@ class Guesty_ALC_API {
 
             $raw_amenities = isset($listing['amenities']) && is_array($listing['amenities']) ? $listing['amenities'] : [];
             $type = isset($listing['propertyType']) ? $listing['propertyType'] : '';
-            $allows_pets = false;
 
+            $allows_pets = false;
             foreach ($raw_amenities as $am) {
                 if (is_string($am) && (stripos($am, 'pet') !== false || stripos($am, 'dog') !== false || stripos($am, 'cat') !== false || stripos($am, 'animal') !== false)) {
                     $allows_pets = true; break;
@@ -1087,7 +1100,6 @@ class Guesty_ALC_API {
             'sound' => 'ph-speaker-hifi', 'speaker' => 'ph-speaker-hifi', 'bluetooth' => 'ph-speaker-hifi',
             'book' => 'ph-book-open', 'read' => 'ph-book-open',
         ];
-
         foreach ($map as $keyword => $icon_class) {
             if (strpos($name, $keyword) !== false) return $icon_class;
         }
@@ -1095,7 +1107,6 @@ class Guesty_ALC_API {
     }
 
     // --- LAST MINUTE COTTAGES SYSTEM --- //
-
     public function setup_last_minute_cron() {
         if (get_option('guesty_is_manually_cleared', 'no') === 'yes') return;
         if (!wp_next_scheduled('guesty_update_last_minute_cache_event')) {
@@ -1106,14 +1117,26 @@ class Guesty_ALC_API {
     public function guesty_fetch_last_minute_availability() {
         if (get_option('guesty_is_manually_cleared', 'no') === 'yes') return;
 
-        $days = (int) get_option('guesty_last_minute_days', 3);
-        $start_date = current_time('Y-m-d');
-        $lm_window_end = date('Y-m-d', strtotime($start_date . " +$days days"));
+        $days = max(1, (int) get_option('guesty_last_minute_days', 3));
+        $tz = wp_timezone();
+        $now_dt = new DateTime('now', $tz);
+        $start_date = $now_dt->format('Y-m-d');
+
+        $window_dt = clone $now_dt;
+        $window_dt->modify("+{$days} days");
+        $lm_window_end = $window_dt->format('Y-m-d');
+
+        // Fetch an extra 7 days of lookahead so open blocks starting near the end of the LM window
+        // can accurately verify if they meet a 2, 3, or 7-night minimum stay requirement.
+        $fetch_end_dt = clone $window_dt;
+        $fetch_end_dt->modify('+7 days');
+        $fetch_end_date = $fetch_end_dt->format('Y-m-d');
+
         $ignore_min_nights = get_option('guesty_last_minute_ignore_min_nights', 'no') === 'yes';
 
         $this->log(
             "Last Minute Cache Warming Triggered:\n" .
-            "- Window: {$days} days ({$start_date} to {$lm_window_end})\n" .
+            "- Window: {$days} days ({$start_date} to {$lm_window_end}, Lookahead to {$fetch_end_date})\n" .
             "- Ignore Nightly Restrictions: " . ($ignore_min_nights ? 'YES' : 'NO'),
             'INFO'
         );
@@ -1123,7 +1146,7 @@ class Guesty_ALC_API {
 
         $listing_ids = array_column($all_listings, 'id');
         
-        $availability = $this->get_live_availability($listing_ids, $start_date, $lm_window_end, true, $ignore_min_nights, $lm_window_end);
+        $availability = $this->get_live_availability($listing_ids, $start_date, $fetch_end_date, true, $ignore_min_nights, $lm_window_end);
         
         $last_minute_units = [];
         $hidden_listings = get_option('guesty_hidden_listings', []);
