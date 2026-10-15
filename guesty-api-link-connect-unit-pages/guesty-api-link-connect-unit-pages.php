@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Guesty API Link Connect - Unit Pages
  * Description: Add-on for Guesty API Link Connect. Automatically generates dedicated, SEO-friendly landing pages with real-time calendar validation for each imported unit.
- * Version: 4.35.0
+ * Version: 4.35.1
  * Author: Christopher E
  */
 
@@ -250,6 +250,7 @@ class Guesty_ALC_Unit_Pages {
                 if (!listContainer) return;
                 listContainer.innerHTML = '';
                 const searchStr = filter.toLowerCase();
+
                 gvsUnitSelectorsList.forEach(item => {
                     if (item.selector.toLowerCase().includes(searchStr) || item.desc.toLowerCase().includes(searchStr)) {
                         const div = document.createElement('div');
@@ -325,7 +326,7 @@ class Guesty_ALC_Unit_Pages {
 
         if (is_wp_error($response) || wp_remote_retrieve_response_code($response) != 200) return false;
 
-        $body = json_decode($body_raw, true);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
         if (is_array($body) && isset($body['access_token'])) {
             set_transient('guesty_access_token', $body['access_token'], 23 * HOUR_IN_SECONDS);
             return $body['access_token'];
@@ -418,6 +419,7 @@ class Guesty_ALC_Unit_Pages {
                 $is_pct = !empty($f['isPercentage']) || ((isset($f['units']) && strtoupper($f['units']) === 'PERCENTAGE'));
                 $is_bundled = !empty($f['isBundled']);
                 $quantifier = $f['quantifier'] ?? '';
+
                 $is_enabled = !empty($f['allPlatforms']);
                 $override_found = false;
 
@@ -468,6 +470,7 @@ class Guesty_ALC_Unit_Pages {
                 if ($fee['quantifier'] === 'PER_NIGHT') $calc_amt *= $nights;
                 if ($fee['quantifier'] === 'PER_GUEST') $calc_amt *= $guests;
             }
+
             if ($calc_amt > 0) {
                 if ($fee['isBundled']) {
                     $bundled_total += $calc_amt;
@@ -488,6 +491,7 @@ class Guesty_ALC_Unit_Pages {
 
         $unbundled_total = 0;
         $evaluated_unbundled_fees = [];
+
         foreach ($unbundled_records as $uf) {
             $calc_amt = $uf['is_pct'] ? round($inflated_subtotal * ($uf['pct_val'] / 100), 2) : $uf['amount'];
             if ($calc_amt > 0) {
@@ -531,6 +535,7 @@ class Guesty_ALC_Unit_Pages {
                 if (($t['quantifier'] ?? '') === 'PER_NIGHT') $calc_amt *= $nights;
                 if (($t['quantifier'] ?? '') === 'PER_GUEST') $calc_amt *= $guests;
             }
+
             if ($calc_amt > 0) {
                 $taxes_total += $calc_amt;
                 $quote_data['taxes'] += $calc_amt;
@@ -546,7 +551,6 @@ class Guesty_ALC_Unit_Pages {
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'guesty_unit_ajax_nonce')) {
             wp_send_json_error(['message' => 'Unauthorized request']);
         }
-
         $unit_id = trim(sanitize_text_field($_POST['unit_id'] ?? ''));
         $check_in = sanitize_text_field($_POST['check_in'] ?? '');
         $check_out = sanitize_text_field($_POST['check_out'] ?? '');
@@ -571,7 +575,6 @@ class Guesty_ALC_Unit_Pages {
             'source' => 'manual',
             'channel' => 'manual_reservations'
         ];
-
         if (!empty($coupon)) {
             $body['promotionCode'] = $coupon;
         }
@@ -592,6 +595,7 @@ class Guesty_ALC_Unit_Pages {
                             $data['results']['rates']['ratePlans'][0]['money']['money']['settingsSnapshot'] ??
                             $data['money']['settingsSnapshot'] ??
                             $data['settingsSnapshot'] ?? null;
+
                 $days_array = $data['rates']['ratePlans'][0]['days'] ?? $data['results']['rates']['ratePlans'][0]['days'] ?? $data['days'] ?? [];
 
                 if ($snapshot && !empty($days_array)) {
@@ -622,7 +626,7 @@ class Guesty_ALC_Unit_Pages {
         ]);
 
         if (!is_wp_error($res_cal) && wp_remote_retrieve_response_code($res_cal) == 200) {
-            $data = json_decode($body_raw, true);
+            $data = json_decode(wp_remote_retrieve_body($res_cal), true);
             $days = $data['days'] ?? ($data['data']['days'] ?? ($data['results'] ?? []));
             if (is_array($days)) {
                 $subtotal = 0;
@@ -648,12 +652,11 @@ class Guesty_ALC_Unit_Pages {
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'guesty_unit_ajax_nonce')) {
             wp_send_json_error(['message' => 'Unauthorized request']);
         }
-
         $unit_id = trim(sanitize_text_field($_POST['unit_id'] ?? ''));
         if (empty($unit_id)) wp_send_json_error(['message' => 'Missing Unit ID']);
 
         // Cache calendar blocks for 15 minutes to eliminate Guesty 429 rate limits
-        $cache_key = 'guesty_cal_blocked_v3_' . md5($unit_id);
+        $cache_key = 'guesty_cal_blocked_v4_' . md5($unit_id);
         $cached_blocks = get_transient($cache_key);
         if (false !== $cached_blocks) {
             wp_send_json_success(['blocked_dates' => $cached_blocks]);
@@ -663,42 +666,20 @@ class Guesty_ALC_Unit_Pages {
         $token = $this->get_access_token();
         if (!$token) wp_send_json_error(['message' => 'Invalid API credentials.']);
 
+        $tz = wp_timezone();
+        $today_dt = new DateTime('now', $tz);
+        $today_str = $today_dt->format('Y-m-d');
+
+        $r1_end = (clone $today_dt)->modify('+180 days')->format('Y-m-d');
+        $r2_start = (clone $today_dt)->modify('+181 days')->format('Y-m-d');
+        $r2_end = (clone $today_dt)->modify('+360 days')->format('Y-m-d');
+
         $blocked_dates = [];
-        
-        // 1. Direct Reservations Check (Faster & safely omits the checkout day)
-        $url_res = "https://open-api.guesty.com/v1/reservations?listingId={$unit_id}&limit=100";
-        $res_reservations = wp_remote_get($url_res, [
-            'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json' ],
-            'timeout' => 15
-        ]);
 
-        if (!is_wp_error($res_reservations) && wp_remote_retrieve_response_code($res_reservations) == 200) {
-            $body = json_decode(wp_remote_retrieve_body($res_reservations), true);
-            $items = $body['results'] ?? ($body['data'] ?? []);
-            foreach ($items as $item) {
-                $status = strtolower($item['status'] ?? '');
-                if (in_array($status, ['canceled', 'declined', 'available'])) continue;
-                $start = $item['checkIn'] ?? ($item['startDate'] ?? '');
-                $end = $item['checkOut'] ?? ($item['endDate'] ?? '');
-                
-                if (!empty($start) && !empty($end)) {
-                    try {
-                        $start_dt = new DateTime(date('Y-m-d', strtotime($start)));
-                        $end_dt = new DateTime(date('Y-m-d', strtotime($end)));
-                        if ($start_dt < $end_dt) {
-                            // DatePeriod natively excludes the end date, perfectly allowing back-to-back bookings
-                            $period = new DatePeriod($start_dt, new DateInterval('P1D'), $end_dt);
-                            foreach ($period as $dt) $blocked_dates[] = $dt->format('Y-m-d');
-                        }
-                    } catch (Exception $e) {}
-                }
-            }
-        }
-
-        // 2. Full Calendar Check (For owner blocks, maintenance, etc.)
+        // Full Calendar Check synced with Last Minute & Live Search logic
         $ranges = [
-            ['start' => date('Y-m-d'), 'end' => date('Y-m-d', strtotime('+180 days'))],
-            ['start' => date('Y-m-d', strtotime('+181 days')), 'end' => date('Y-m-d', strtotime('+360 days'))]
+            ['start' => $today_str, 'end' => $r1_end],
+            ['start' => $r2_start,  'end' => $r2_end]
         ];
 
         foreach ($ranges as $range) {
@@ -711,24 +692,39 @@ class Guesty_ALC_Unit_Pages {
             if (!is_wp_error($res_cal) && wp_remote_retrieve_response_code($res_cal) == 200) {
                 $body = json_decode(wp_remote_retrieve_body($res_cal), true);
                 $days = $body['days'] ?? ($body['data']['days'] ?? ($body['results'] ?? (is_array($body) && isset($body[0]) ? $body : [])));
+
                 if (is_array($days)) {
                     foreach ($days as $day) {
-                        if (!is_array($day)) continue;
+                        if (!is_array($day) || empty($day['date'])) continue;
+                        $norm_date = substr($day['date'], 0, 10);
                         $is_blocked = false;
                         
-                        // We do NOT block simply if status is unavailable, because that might be a reservation checkout day.
-                        // We strictly look for explicitly defined owner blocks.
+                        // 1. Check explicit blocks array
                         if (isset($day['blocks']) && is_array($day['blocks'])) {
-                            foreach ($day['blocks'] as $block_active) { 
-                                if ($block_active === true) { $is_blocked = true; break; } 
+                            foreach ($day['blocks'] as $b_val) { 
+                                if ($b_val === true || $b_val === 1 || $b_val === 'true') {
+                                    $is_blocked = true;
+                                    break;
+                                } 
                             }
-                        } elseif (isset($day['isAvailable']) && $day['isAvailable'] === false) {
+                        }
+
+                        // 2. Check explicit isAvailable boolean
+                        if (!$is_blocked && isset($day['isAvailable']) && $day['isAvailable'] === false) {
                             $is_blocked = true;
                         }
 
-                        if ($is_blocked && !empty($day['date'])) {
-                            $date_parts = explode('T', $day['date']);
-                            if (isset($date_parts[0])) $blocked_dates[] = $date_parts[0];
+                        // 3. Check day status / allotment (matches Last Minute & Search engine logic)
+                        if (!$is_blocked) {
+                            if (isset($day['status']) && strtolower((string)$day['status']) !== 'available') {
+                                $is_blocked = true;
+                            } elseif (isset($day['allotment']) && is_numeric($day['allotment']) && (int)$day['allotment'] <= 0) {
+                                $is_blocked = true;
+                            }
+                        }
+
+                        if ($is_blocked) {
+                            $blocked_dates[] = $norm_date;
                         }
                     }
                 }
@@ -736,6 +732,7 @@ class Guesty_ALC_Unit_Pages {
         }
 
         $blocked_dates = array_values(array_unique($blocked_dates));
+        sort($blocked_dates);
         set_transient($cache_key, $blocked_dates, 15 * MINUTE_IN_SECONDS);
         wp_send_json_success(['blocked_dates' => $blocked_dates]);
     }
@@ -838,6 +835,7 @@ class Guesty_ALC_Unit_Pages {
         $fetch_full_data = $show_space || $show_access || $show_notes || $show_neighborhood || $show_transit || $show_house_rules || $show_interaction || $show_cancel_policy || $show_directions || $show_custom_fields || $show_min_max_nights || $show_beds || $show_full_calendar;
         
         $full = $fetch_full_data ? $this->get_full_listing($property['id']) : [];
+
         $public_desc = $full['publicDescription'] ?? [];
         $terms = $full['terms'] ?? [];
         $address = $full['address'] ?? [];
@@ -891,7 +889,7 @@ class Guesty_ALC_Unit_Pages {
             'Bathroom' => ['bath', 'tub', 'shower', 'shampoo', 'soap', 'conditioner', 'body wash', 'hot water', 'toilet'],
             'Bedroom & Laundry' => ['washer', 'dry', 'laundry', 'bed', 'linen', 'pillow', 'blanket', 'iron', 'hanger', 'clothing', 'closet', 'wardrobe', 'safe'],
             'Entertainment' => ['tv', 'television', 'cable', 'netflix', 'game', 'dice', 'ping pong', 'pool table', 'book', 'read', 'dvd', 'console', 'music', 'sound', 'speaker', 'bluetooth', 'movie'],
-            'Family' => ['crib', 'cot', 'baby', 'child', 'high chair', 'kid', 'infant', 'pack n play', 'pack ’n play', 'playpen'],
+            'Family' => ['crib', 'cot', 'baby', 'child', 'high chair', 'kid', 'infant', 'pack n play', 'pack  n play', 'playpen'],
             'Heating & Cooling' => ['air condition', 'ac', 'heat', 'warm', 'fan', 'climate', 'fireplace', 'fire place'],
             'Internet & Office' => ['wifi', 'internet', 'web', 'desk', 'office', 'workspace', 'laptop', 'ethernet'],
             'Kitchen & Dining' => ['kitchen', 'cook', 'oven', 'stove', 'microwave', 'fridge', 'refrigerator', 'freezer', 'ice', 'coffee', 'keurig', 'espresso', 'dish', 'toaster', 'blender', 'kettle', 'bbq', 'grill', 'barbeque', 'bake', 'dining', 'wine', 'silverware', 'pans', 'pots'],
@@ -950,8 +948,8 @@ class Guesty_ALC_Unit_Pages {
         $custom_icons = get_option('guesty_custom_icons', []);
         if (!is_array($custom_icons)) $custom_icons = [];
         $api_engine = class_exists('Guesty_ALC_API') ? new Guesty_ALC_API() : null;
-
         $currency_mode = get_option('guesty_currency_display', 'auto');
+
         ?>
         <script src="https://unpkg.com/@phosphor-icons/web"></script>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
@@ -986,7 +984,6 @@ class Guesty_ALC_Unit_Pages {
             .swiper-button-next, .swiper-button-prev { color: #fff !important; background: rgba(0,0,0,0.4); padding: 30px 20px; border-radius: 8px; }
             .swiper-button-next:hover, .swiper-button-prev:hover { background: rgba(0,0,0,0.7); }
             .swiper-button-next::after, .swiper-button-prev::after { font-size: 20px !important; font-weight: bold; }
-
             @media(max-width: 768px) { .swiper-main { height: 350px; } .swiper-thumbs { display: none; } }
 
             .gvs-lightbox { position: fixed; z-index: 999999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(15, 23, 42, 0.95); display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
@@ -1052,16 +1049,15 @@ class Guesty_ALC_Unit_Pages {
             .gvs-quote-item span { font-size: 13px; color: #64748b; margin-bottom: 2px; }
             .gvs-quote-item strong { font-size: 14px; color: #0f172a; font-weight: 700; }
             .gvs-quote-divider { height: 1px; background: #e2e8f0; width: 100%; margin: 15px 0; }
-
             .gvs-coupon-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; color: #0f172a; font-weight: 600; font-size: 15px; }
             .gvs-coupon-header svg { width: 12px; height: 12px; transition: transform 0.2s; }
             .gvs-coupon-content { display: none; padding-top: 15px; }
             .gvs-coupon-input-wrap { display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; }
             .gvs-coupon-input { flex-grow: 1; border: none; padding: 10px; outline: none; font-size: 14px; min-width: 0; }
             .gvs-coupon-btn { background: #f1f5f9; border: none; border-left: 1px solid #cbd5e1; padding: 10px 15px; font-weight: 600; cursor: pointer; color: #0f172a; }
-
             .gvs-quote-line { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #334155; }
             .gvs-quote-total { display: flex; justify-content: space-between; align-items: center; font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 5px; }
+
             .gvs-quote-accordion-content { display: none; padding-bottom: 8px; }
             .gvs-quote-accordion-wrapper.open .gvs-quote-accordion-content { display: block; }
             .gvs-quote-accordion-wrapper.open .gvs-quote-accordion-header svg { transform: rotate(180deg); }
@@ -1490,7 +1486,6 @@ class Guesty_ALC_Unit_Pages {
                 }
                 ?>
             </div> <!-- End Full Width Section -->
-
         </div> <!-- End Main Unit Wrap -->
 
         <div id="gvs-lightbox" class="gvs-lightbox">
@@ -1585,7 +1580,6 @@ class Guesty_ALC_Unit_Pages {
                 if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); updateLightboxImage(currentLightboxIndex - 1); });
                 if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); updateLightboxImage(currentLightboxIndex + 1); });
                 if (lightbox) lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
-
                 document.addEventListener('keydown', (e) => {
                     if (!lightbox || !lightbox.classList.contains('active')) return;
                     if (e.key === 'Escape') closeLightbox();
@@ -1627,6 +1621,7 @@ class Guesty_ALC_Unit_Pages {
 
                 const primaryBtnColor = '<?php echo esc_js($btn_color); ?>';
                 const currencySetting = '<?php echo esc_js($currency_mode); ?>';
+
                 const urlParams = new URLSearchParams(window.location.search);
                 const preCheckin = urlParams.get('gvs_checkin');
                 const preCheckout = urlParams.get('gvs_checkout');
@@ -1646,6 +1641,7 @@ class Guesty_ALC_Unit_Pages {
                 let fpInline2 = null;
                 const fpInlineAnchor1 = document.getElementById('gvs-cal-part-1');
                 const fpInlineAnchor2 = document.getElementById('gvs-cal-part-2');
+
                 const turnDayString = '<?php echo esc_js($turnday_val); ?>'.toLowerCase().trim();
                 const daysMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6, 'sun':0, 'mon':1, 'tue':2, 'wed':3, 'thu':4, 'fri':5, 'sat':6 };
                 const targetDay = daysMap[turnDayString];
@@ -1673,6 +1669,7 @@ class Guesty_ALC_Unit_Pages {
 
                 const fetchQuoteData = async () => {
                     if (!checkin.value || !checkout.value) { disableBookBtn(); return; }
+
                     const d1 = new Date(checkin.value + 'T00:00:00');
                     const d2 = new Date(checkout.value + 'T00:00:00');
                     const nights = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
@@ -1682,6 +1679,7 @@ class Guesty_ALC_Unit_Pages {
                     qOut.innerText = formatDateStr(checkout.value);
                     qNights.innerText = nights + (nights === 1 ? ' Night' : ' Nights');
                     qGuests.innerText = guests.value;
+
                     quoteBox.style.display = 'block';
                     quoteLoader.style.display = 'flex';
                     errorMsg.style.display = 'none';
@@ -1743,6 +1741,7 @@ class Guesty_ALC_Unit_Pages {
                             }
                             
                             qTotal.innerText = formatMoney(q.total, curr);
+
                             btn.disabled = false;
                             btn.style.background = primaryBtnColor;
                             btn.style.cursor = 'pointer';
